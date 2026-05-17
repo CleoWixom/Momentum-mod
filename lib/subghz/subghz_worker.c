@@ -85,6 +85,16 @@ SubGhzWorker* subghz_worker_alloc(void) {
     instance->thread =
         furi_thread_alloc_ex("SubGhzWorker", 2048, subghz_worker_thread_callback, instance);
 
+    /*
+     * WORKER-03 fix: set an explicit thread priority above Normal.
+     * SubGhzWorker decodes RF captures in real-time; if it is preempted
+     * by UI or other Normal-priority tasks, short pulses can be missed.
+     * FuriThreadPriorityHigh (17) is one step above Normal (16) and below
+     * Highest (18), leaving headroom for system-critical threads.
+     * The UI thread runs at Normal priority, so this does not starve drawing.
+     */
+    furi_thread_set_priority(instance->thread, FuriThreadPriorityHigh);
+
     instance->stream =
         furi_stream_buffer_alloc(sizeof(LevelDuration) * 4096, sizeof(LevelDuration));
 

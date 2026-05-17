@@ -289,6 +289,22 @@ static bool subghz_txrx_tx(SubGhzTxRx* instance, uint32_t frequency) {
     furi_assert(instance);
     furi_assert(instance->txrx_state != SubGhzTxRxStateSleep);
 
+    /*
+     * TXRX-01 fix: enforce check_tx at the single low-level TX entry point so
+     * that all callers — UI, RPC, repeat-from-history — are covered uniformly.
+     * Previously the check was only applied on some paths (e.g. scene_transmitter)
+     * but not on others (e.g. RPC repeat).
+     */
+    SubGhzTx tx_check = subghz_devices_check_tx(instance->radio_device, frequency);
+    if(tx_check != SubGhzTxAllowed) {
+        FURI_LOG_W(
+            TAG,
+            "TX blocked on %.0f Hz (reason: %d)",
+            (double)frequency,
+            (int)tx_check);
+        return false;
+    }
+
     subghz_devices_idle(instance->radio_device);
     subghz_devices_set_frequency(instance->radio_device, frequency);
 

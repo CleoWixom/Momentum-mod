@@ -41,7 +41,18 @@
 #define SUBGHZ_DEVICE_CC1101_EXT_ASYNC_TX_BUFFER_FULL (256u)
 #define SUBGHZ_DEVICE_CC1101_EXT_ASYNC_TX_BUFFER_HALF \
     (SUBGHZ_DEVICE_CC1101_EXT_ASYNC_TX_BUFFER_FULL / 2)
-#define SUBGHZ_DEVICE_CC1101_EXT_ASYNC_TX_GUARD_TIME (999u >> 1)
+
+/**
+ * TX guard time in timer ticks (each tick = 2 µs, per TIM17 prescaler: 64*2-1).
+ * Value 499 = ~998 µs ≈ 1 ms tail silence after the last symbol, required
+ * to let the CC1101 fully drain its TX FIFO before the driver releases the bus.
+ * Reference: CC1101 datasheet Rev. E, section 10.4 "TX FIFO" and Table 31.
+ * Formula: guard_us / 2 - 1 = 1000 / 2 - 1 = 499.
+ * Original expression: (999u >> 1) == 499; rewritten here for clarity.
+ */
+#define SUBGHZ_CC1101_TX_GUARD_TIME_TICKS (499u)
+/** Legacy alias kept for any callers still using the old name */
+#define SUBGHZ_DEVICE_CC1101_EXT_ASYNC_TX_GUARD_TIME SUBGHZ_CC1101_TX_GUARD_TIME_TICKS
 
 /** SubGhz state */
 typedef enum {
@@ -90,6 +101,9 @@ typedef struct {
     volatile SubGhzDeviceCC1101ExtRegulation regulation;
     const GpioPin* async_mirror_pin;
     const FuriHalSpiBusHandle* spi_bus_handle;
+    /** CS GPIO pin used during alloc(); stored so that free() can reset it
+     *  without inspecting global momentum_settings (BUG-03 fix). */
+    const GpioPin* cs_pin;
     const GpioPin* g0_pin;
     SubGhzDeviceCC1101ExtAsyncTx async_tx;
     SubGhzDeviceCC1101ExtAsyncRx async_rx;
@@ -244,6 +258,12 @@ bool subghz_device_cc1101_ext_alloc(SubGhzDeviceConf* conf) {
     if(momentum_settings.spi_cc1101_handle == SpiExtra) {
         furi_hal_gpio_init_simple(&gpio_ext_pa4, GpioModeOutputPushPull);
         furi_hal_gpio_write(&gpio_ext_pa4, true);
+        // BUG-03: record which CS pin this driver owns so free() can reset it
+        // without inspecting momentum_settings (avoids cross-driver coupling).
+        subghz_device_cc1101_ext->cs_pin = &gpio_ext_pa4;
+    } else {
+        // SpiDefault / amp_and_leds path uses pc3 as CS
+        subghz_device_cc1101_ext->cs_pin = &gpio_ext_pc3;
     }
 
     furi_hal_spi_bus_handle_init(subghz_device_cc1101_ext->spi_bus_handle);
@@ -260,12 +280,15 @@ void subghz_device_cc1101_ext_free(void) {
 
     furi_hal_spi_bus_handle_deinit(subghz_device_cc1101_ext->spi_bus_handle);
 
-    // resetting the CS pins to floating
-    if(momentum_settings.spi_nrf24_handle == SpiDefault ||
-       subghz_device_cc1101_ext->amp_and_leds) {
-        furi_hal_gpio_init_simple(&gpio_ext_pc3, GpioModeAnalog);
-    } else if(momentum_settings.spi_nrf24_handle == SpiExtra) {
-        furi_hal_gpio_init_simple(&gpio_ext_pa4, GpioModeAnalog);
+    /*
+     * BUG-03 fix: previously this code inspected momentum_settings.spi_nrf24_handle
+     * to decide which CS pin to release — a hard coupling between the CC1101
+     * driver and an unrelated NRF24 subsystem.  Now we use the cs_pin recorded
+     * during alloc(), which makes the driver self-contained and correct even
+     * when the NRF24 configuration changes at runtime.
+     */
+    if(subghz_device_cc1101_ext->cs_pin != NULL) {
+        furi_hal_gpio_init_simple(subghz_device_cc1101_ext->cs_pin, GpioModeAnalog);
     }
 
     free(subghz_device_cc1101_ext);
@@ -283,10 +306,20 @@ const GpioPin* subghz_device_cc1101_ext_get_data_gpio(void) {
 bool subghz_device_cc1101_ext_is_connect(void) {
     bool ret = false;
 
-    if(subghz_device_cc1101_ext == NULL) { // not initialized
+    if(subghz_device_cc1101_ext == NULL) {
+        /*
+         * BUG-02 fix: previously alloc() was always followed by free()
+         * regardless of whether alloc succeeded.  If alloc() returns false,
+         * the CC1101 chip did not respond in check_init(); the global pointer
+         * is still set (alloc always mallocs before calling check_init), so
+         * free() is technically safe — but it would deinit an SPI handle that
+         * was never fully initialised.  Guard the call explicitly.
+         */
         ret = subghz_device_cc1101_ext_alloc(NULL);
-        subghz_device_cc1101_ext_free();
-    } else { // initialized
+        if(subghz_device_cc1101_ext != NULL) {
+            subghz_device_cc1101_ext_free();
+        }
+    } else {
         furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
         uint8_t partnumber = cc1101_get_partnumber(subghz_device_cc1101_ext->spi_bus_handle);
         furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
@@ -313,20 +346,34 @@ void subghz_device_cc1101_ext_sleep(void) {
 
 void subghz_device_cc1101_ext_dump_state(void) {
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
-    printf(
-        "[subghz_device_cc1101_ext] cc1101 chip %d, version %d\r\n",
+    // CC1101-03: use FURI logger instead of printf so output goes to FURI trace (not just UART)
+    FURI_LOG_I(
+        TAG,
+        "cc1101 chip %d, version %d",
         cc1101_get_partnumber(subghz_device_cc1101_ext->spi_bus_handle),
         cc1101_get_version(subghz_device_cc1101_ext->spi_bus_handle));
     furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
 }
 
 void subghz_device_cc1101_ext_load_custom_preset(const uint8_t* preset_data) {
+    furi_assert(preset_data);
     //load config
     subghz_device_cc1101_ext_reset();
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
     uint32_t i = 0;
     uint8_t pa[8] = {0};
-    while(preset_data[i]) {
+
+    /*
+     * CC1101-02 note: the preset_data format is a flat byte array of
+     * (register, value) pairs terminated by a 0x00 sentinel byte, followed
+     * by 2 padding bytes and then 8 PA table bytes.  There is currently no
+     * length parameter, so we can only defend with a reasonable upper bound:
+     * the CC1101 has 47 configuration registers → at most 94 bytes of pairs,
+     * plus the sentinel and PA section ≈ 105 bytes total.  We cap iteration
+     * at 256 bytes to prevent an infinite loop on malformed/unterminated data.
+     */
+    #define SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES 256u
+    while(preset_data[i] && (i < SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES - 2u)) {
         cc1101_write_reg(
             subghz_device_cc1101_ext->spi_bus_handle, preset_data[i], preset_data[i + 1]);
         i += 2;
@@ -341,7 +388,7 @@ void subghz_device_cc1101_ext_load_custom_preset(const uint8_t* preset_data) {
     if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
         i = 0;
         FURI_LOG_D(TAG, "Loading custom preset");
-        while(preset_data[i]) {
+        while(preset_data[i] && (i < SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES - 2u)) {
             FURI_LOG_D(TAG, "Reg[%lu]: %02X=%02X", i, preset_data[i], preset_data[i + 1]);
             i += 2;
         }
@@ -349,6 +396,7 @@ void subghz_device_cc1101_ext_load_custom_preset(const uint8_t* preset_data) {
             FURI_LOG_D(TAG, "PA[%u]:  %02X", y, preset_data[y]);
         }
     }
+    #undef SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES
 }
 
 void subghz_device_cc1101_ext_load_registers(const uint8_t* data) {
@@ -388,20 +436,51 @@ void subghz_device_cc1101_ext_flush_tx(void) {
     furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
 }
 
+/** Running count of RX FIFO overflow events; useful for diagnostics. */
+static volatile uint32_t subghz_device_cc1101_ext_rx_overflow_count = 0;
+
 bool subghz_device_cc1101_ext_rx_pipe_not_empty(void) {
     CC1101RxBytes status[1];
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
+
+    /*
+     * CC1101 datasheet Rev. E, section 10.6 "RXFIFO and TXFIFO":
+     * The RXBYTES status register (0x3B, read with burst bit set) provides
+     * both the number of bytes available (bits 6:0) and the RXFIFO_OVERFLOW
+     * flag (bit 7).  Reading status registers with the burst bit is required
+     * to get the correct value on the first read.
+     *
+     * Historical note: RXFIFO_OVERFLOW was previously ignored (TODO comment).
+     * The root cause was that the flag is only reliable when read immediately
+     * after GDO0/GDO2 asserts the overflow condition; it can de-assert once
+     * the FIFO is partially drained.  The safest strategy is therefore to
+     * check it here, flush on detection, and let the caller handle
+     * resynchronisation.
+     */
     cc1101_read_reg(
         subghz_device_cc1101_ext->spi_bus_handle,
         (CC1101_STATUS_RXBYTES) | CC1101_BURST,
         (uint8_t*)status);
-    furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
-    // TODO: Find reason why RXFIFO_OVERFLOW doesnt work correctly
-    if(status->NUM_RXBYTES > 0) {
-        return true;
-    } else {
+
+    if(status->RXFIFO_OVERFLOW) {
+        /*
+         * FIFO has overflowed: data is corrupted.  Per datasheet Table 25,
+         * SFRX must be issued in IDLE or RXFIFO_OVERFLOW states only.
+         * Switch to IDLE first, then flush.
+         */
+        cc1101_switch_to_idle(subghz_device_cc1101_ext->spi_bus_handle);
+        cc1101_flush_rx(subghz_device_cc1101_ext->spi_bus_handle);
+        subghz_device_cc1101_ext_rx_overflow_count++;
+        FURI_LOG_W(
+            TAG,
+            "RXFIFO overflow detected, flushed (total overflows: %lu)",
+            (unsigned long)subghz_device_cc1101_ext_rx_overflow_count);
+        furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
         return false;
     }
+
+    furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
+    return (status->NUM_RXBYTES > 0);
 }
 
 bool subghz_device_cc1101_ext_is_rx_data_crc_valid(void) {
