@@ -50,7 +50,7 @@
  * Formula: guard_us / 2 - 1 = 1000 / 2 - 1 = 499.
  * Original expression: (999u >> 1) == 499; rewritten here for clarity.
  */
-#define SUBGHZ_CC1101_TX_GUARD_TIME_TICKS (499u)
+#define SUBGHZ_CC1101_TX_GUARD_TIME_TICKS            (499u)
 /** Legacy alias kept for any callers still using the old name */
 #define SUBGHZ_DEVICE_CC1101_EXT_ASYNC_TX_GUARD_TIME SUBGHZ_CC1101_TX_GUARD_TIME_TICKS
 
@@ -363,7 +363,7 @@ void subghz_device_cc1101_ext_load_custom_preset(const uint8_t* preset_data) {
     uint32_t i = 0;
     uint8_t pa[8] = {0};
 
-    /*
+/*
      * CC1101-02 note: the preset_data format is a flat byte array of
      * (register, value) pairs terminated by a 0x00 sentinel byte, followed
      * by 2 padding bytes and then 8 PA table bytes.  There is currently no
@@ -372,7 +372,7 @@ void subghz_device_cc1101_ext_load_custom_preset(const uint8_t* preset_data) {
      * plus the sentinel and PA section ≈ 105 bytes total.  We cap iteration
      * at 256 bytes to prevent an infinite loop on malformed/unterminated data.
      */
-    #define SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES 256u
+#define SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES 256u
     while(preset_data[i] && (i < SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES - 2u)) {
         cc1101_write_reg(
             subghz_device_cc1101_ext->spi_bus_handle, preset_data[i], preset_data[i + 1]);
@@ -396,7 +396,7 @@ void subghz_device_cc1101_ext_load_custom_preset(const uint8_t* preset_data) {
             FURI_LOG_D(TAG, "PA[%u]:  %02X", y, preset_data[y]);
         }
     }
-    #undef SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES
+#undef SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES
 }
 
 void subghz_device_cc1101_ext_load_registers(const uint8_t* data) {

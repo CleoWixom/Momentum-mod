@@ -297,11 +297,7 @@ static bool subghz_txrx_tx(SubGhzTxRx* instance, uint32_t frequency) {
      */
     SubGhzTx tx_check = subghz_devices_check_tx(instance->radio_device, frequency);
     if(tx_check != SubGhzTxAllowed) {
-        FURI_LOG_W(
-            TAG,
-            "TX blocked on %.0f Hz (reason: %d)",
-            (double)frequency,
-            (int)tx_check);
+        FURI_LOG_W(TAG, "TX blocked on %.0f Hz (reason: %d)", (double)frequency, (int)tx_check);
         return false;
     }
 
