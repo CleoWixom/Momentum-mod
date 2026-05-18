@@ -433,6 +433,75 @@ bool subghz_setting_delete_custom_preset(SubGhzSetting* instance, const char* pr
     return false;
 }
 
+bool subghz_setting_save_custom_preset(
+    SubGhzSetting* instance,
+    const char* preset_name,
+    const uint8_t* preset_data,
+    size_t preset_data_size) {
+    furi_check(instance);
+    furi_check(preset_name);
+    furi_check(preset_data);
+    furi_check(preset_data_size > 0);
+
+    /* Reject duplicate names. */
+    if(subghz_setting_get_inx_preset_by_name(instance, preset_name) >= 0) {
+        FURI_LOG_W(TAG, "save_custom_preset: name '%s' already exists", preset_name);
+        return false;
+    }
+
+    const char* path = EXT_PATH("subghz/assets/setting_user");
+    Storage* storage = furi_record_open(RECORD_STORAGE);
+    FlipperFormat* fff = flipper_format_file_alloc(storage);
+
+    bool result = false;
+    do {
+        /*
+         * Try append first (file already exists and has a valid header).
+         * If the file is absent or corrupt, fall back to creating a fresh one.
+         */
+        if(!flipper_format_file_open_append(fff, path)) {
+            FURI_LOG_I(TAG, "setting_user not found, creating it");
+            flipper_format_free(fff);
+            fff = flipper_format_file_alloc(storage);
+            if(!flipper_format_file_open_new(fff, path)) {
+                FURI_LOG_E(TAG, "Cannot create %s", path);
+                break;
+            }
+            if(!flipper_format_write_header_cstr(
+                   fff, SUBGHZ_SETTING_FILE_TYPE, SUBGHZ_SETTING_FILE_VERSION))
+                break;
+        }
+
+        if(!flipper_format_write_string_cstr(fff, "Custom_preset_name", preset_name)) {
+            FURI_LOG_E(TAG, "Failed to write preset name");
+            break;
+        }
+        if(!flipper_format_write_hex(fff, "Custom_preset_data", preset_data, preset_data_size)) {
+            FURI_LOG_E(TAG, "Failed to write preset data");
+            break;
+        }
+        result = true;
+    } while(false);
+
+    flipper_format_free(fff);
+    furi_record_close(RECORD_STORAGE);
+
+    if(result) {
+        /*
+         * Reflect the new preset in the in-memory list immediately so that
+         * the Modulation selector shows it without requiring a restart.
+         */
+        FlipperFormat* fff_mem = flipper_format_string_alloc();
+        flipper_format_write_hex(fff_mem, "Custom_preset_data", preset_data, preset_data_size);
+        flipper_format_rewind(fff_mem);
+        result = subghz_setting_load_custom_preset(instance, preset_name, fff_mem);
+        flipper_format_free(fff_mem);
+        FURI_LOG_I(
+            TAG, "Preset '%s' saved (%zu bytes)", preset_name, preset_data_size);
+    }
+    return result;
+}
+
 uint8_t* subghz_setting_get_preset_data(SubGhzSetting* instance, size_t idx) {
     furi_check(instance);
     SubGhzSettingCustomPresetItem* item =

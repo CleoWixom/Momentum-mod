@@ -24,6 +24,8 @@ enum SubGhzSettingIndex {
     SubGhzSettingIndexSound,
     SubGhzSettingIndexResetToDefault,
     SubGhzSettingIndexLock,
+    SubGhzSettingIndexSavePreset, /**< Save current modulation as named preset */
+    SubGhzSettingIndexLoadPreset, /**< Load preset from .sgp file             */
 };
 
 #define RAW_THRESHOLD_RSSI_COUNT 11
@@ -456,6 +458,16 @@ static void subghz_scene_receiver_config_var_list_enter_callback(void* context, 
     } else if(index == SubGhzSettingIndexLock) {
         view_dispatcher_send_custom_event(
             subghz->view_dispatcher, SubGhzCustomEventSceneSettingLock);
+    } else if(index == SubGhzSettingIndexSavePreset) {
+        scene_manager_set_scene_state(
+            subghz->scene_manager, SubGhzScenePresetSave, 0 /* SAVE mode */);
+        view_dispatcher_send_custom_event(
+            subghz->view_dispatcher, SubGhzCustomEventScenePresetSave);
+    } else if(index == SubGhzSettingIndexLoadPreset) {
+        scene_manager_set_scene_state(
+            subghz->scene_manager, SubGhzScenePresetSave, 1 /* LOAD mode */);
+        view_dispatcher_send_custom_event(
+            subghz->view_dispatcher, SubGhzCustomEventScenePresetLoad);
     } else if(index == SubGhzSettingIndexResetToDefault) {
         // Reset all values to default state!
         subghz_txrx_set_preset_internal(
@@ -732,6 +744,19 @@ void subghz_scene_receiver_config_on_enter(void* context) {
             subghz);
     }
 
+    /* SETTINGS-03: Save and Load custom presets */
+    variable_item_list_add(
+        subghz->variable_item_list, "Save Preset As...", 1, NULL, NULL);
+    variable_item_list_set_enter_callback(
+        subghz->variable_item_list,
+        subghz_scene_receiver_config_var_list_enter_callback,
+        subghz);
+    variable_item_list_add(subghz->variable_item_list, "Load Preset", 1, NULL, NULL);
+    variable_item_list_set_enter_callback(
+        subghz->variable_item_list,
+        subghz_scene_receiver_config_var_list_enter_callback,
+        subghz);
+
     if(scene_manager_get_scene_state(subghz->scene_manager, SubGhzSceneReadRAW) ==
        SubGhzCustomEventManagerSet) {
         item = variable_item_list_add(
@@ -775,6 +800,10 @@ bool subghz_scene_receiver_config_on_event(void* context, SceneManagerEvent even
             consumed = true;
         } else if(event.event == SubGhzCustomEventSceneSettingResetToDefault) {
             scene_manager_previous_scene(subghz->scene_manager);
+            consumed = true;
+        } else if(event.event == SubGhzCustomEventScenePresetSave ||
+                  event.event == SubGhzCustomEventScenePresetLoad) {
+            scene_manager_next_scene(subghz->scene_manager, SubGhzScenePresetSave);
             consumed = true;
         }
     }

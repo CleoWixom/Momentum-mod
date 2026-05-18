@@ -66,6 +66,32 @@ bool subghz_setting_load_custom_preset(
 
 bool subghz_setting_delete_custom_preset(SubGhzSetting* instance, const char* preset_name);
 
+/**
+ * @brief Save a custom preset to the user settings file and add it to the
+ *        in-memory preset list.
+ *
+ * If a preset with the same name already exists in memory this function
+ * returns false without modifying the file, so callers should check first
+ * with subghz_setting_get_inx_preset_by_name().
+ *
+ * The preset is appended to EXT_PATH("subghz/assets/setting_user") using
+ * FlipperFormat's append mode, so all previously saved custom presets are
+ * preserved.  The file is created with a valid header if it does not exist.
+ *
+ * @param instance        SubGhzSetting instance.
+ * @param preset_name     Null-terminated name string (max 64 chars).
+ * @param preset_data     Raw CC1101 register bytes (register-address/value
+ *                        pairs followed by PA table, same layout as
+ *                        Custom_preset_data in the setting file).
+ * @param preset_data_size  Number of bytes in preset_data.
+ * @return true on success, false if the name already exists or I/O failed.
+ */
+bool subghz_setting_save_custom_preset(
+    SubGhzSetting* instance,
+    const char* preset_name,
+    const uint8_t* preset_data,
+    size_t preset_data_size);
+
 uint32_t subghz_setting_get_frequency(SubGhzSetting* instance, size_t idx);
 
 uint32_t subghz_setting_get_hopper_frequency(SubGhzSetting* instance, size_t idx);

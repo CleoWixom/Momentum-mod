@@ -31,7 +31,7 @@
 | UI-02 | ⬜ Открыто | UI | 🟢 Низкий | Низкая | Нет RSSI в receiver view |
 | UI-03 | ⬜ Открыто | UI | 🟡 Средний | Средняя | Нет фильтрации истории |
 | SETTINGS-01 | ✅ Выполнено | Настройки | 🟡 Средний | Средняя | Синхронный I/O → async 1500 мс debounce |
-| SETTINGS-03 | ⬜ Открыто | Настройки | 🟢 Низкий | Средняя | Нельзя создавать пресеты из UI |
+| SETTINGS-03 | ✅ Выполнено | Настройки | 🟢 Низкий | Средняя | Save/Load preset из UI |
 | QUALITY-03 | ⬜ Открыто | Качество | 🟠 Высокий | Средняя | Нет проверки SPI статуса в работе |
 | TEST-01 | ⬜ Открыто | Тесты | 🟠 Высокий | Средняя | Нет интеграционных тестов pipeline |
 | DOC-01 | ✅ Выполнено | Документация | 🟡 Средний | Низкая | Doxygen для subghz_worker.h и subghz_txrx.h |
@@ -247,15 +247,39 @@ subghz_device_cc1101_ext->spi_bus_handle =
 
 ---
 
-### [SETTINGS-03] Нельзя создавать пресеты из UI
-**Что сделать:**
-- [ ] "Save current preset as…" и "Load preset from file" в Config scene.
+### [SETTINGS-03] ✅ Нельзя создавать пресеты из UI
+
+**Реализовано:**
+- [x] **"Save Preset As…"** — новый пункт в ReceiverConfig. Открывает TextInput с именем текущего пресета. После подтверждения: пишет в `setting_user` (append-режим, без перезаписи), сохраняет standalone `EXT_PATH("subghz/presets/<name>.sgp")`, добавляет пресет в in-memory список, переключает активную модуляцию на новый пресет.
+- [x] **"Load Preset"** — новый пункт в ReceiverConfig. Открывает DialogsApp file browser в `EXT_PATH("subghz/presets/")` (расширение `.sgp`). После выбора файла: читает `Custom_preset_data`, проверяет дубликаты, добавляет в in-memory список, переключает активную модуляцию.
+- [x] **`subghz_setting_save_custom_preset()`** — новая функция в `lib/subghz/subghz_setting.c`, добавлена в `api_symbols.csv`.
+- [x] **`subghz_scene_preset_save.c`** — новая сцена, обрабатывает оба режима через `scene_state` (0 = Save, 1 = Load).
+
+**Формат файла `.sgp`** (SubGhz Preset):
+```
+Filetype: Flipper SubGhz Preset
+Version: 1
+Custom_preset_name: MyPreset
+Custom_preset_data: 02 0D 0B 06 ...
+```
 
 ---
 
-### [SETTINGS-03] Нельзя создавать пресеты из UI
-**Что сделать:**
-- [ ] "Save current preset as…" и "Load preset from file" в Config scene.
+### [SETTINGS-03] ✅ Нельзя создавать пресеты из UI
+
+**Реализовано:**
+- [x] **"Save Preset As…"** — новый пункт в ReceiverConfig. Открывает TextInput с именем текущего пресета. После подтверждения: пишет в `setting_user` (append-режим, без перезаписи), сохраняет standalone `EXT_PATH("subghz/presets/<name>.sgp")`, добавляет пресет в in-memory список, переключает активную модуляцию на новый пресет.
+- [x] **"Load Preset"** — новый пункт в ReceiverConfig. Открывает DialogsApp file browser в `EXT_PATH("subghz/presets/")` (расширение `.sgp`). После выбора файла: читает `Custom_preset_data`, проверяет дубликаты, добавляет в in-memory список, переключает активную модуляцию.
+- [x] **`subghz_setting_save_custom_preset()`** — новая функция в `lib/subghz/subghz_setting.c`, добавлена в `api_symbols.csv`.
+- [x] **`subghz_scene_preset_save.c`** — новая сцена, обрабатывает оба режима через `scene_state` (0 = Save, 1 = Load).
+
+**Формат файла `.sgp`** (SubGhz Preset):
+```
+Filetype: Flipper SubGhz Preset
+Version: 1
+Custom_preset_name: MyPreset
+Custom_preset_data: 02 0D 0B 06 ...
+```
 
 ---
 
