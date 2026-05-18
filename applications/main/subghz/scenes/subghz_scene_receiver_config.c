@@ -728,34 +728,27 @@ void subghz_scene_receiver_config_on_enter(void* context) {
        SubGhzCustomEventManagerSet) {
         // Reset to default
         variable_item_list_add(subghz->variable_item_list, "Reset to Default", 1, NULL, NULL);
-
-        variable_item_list_set_enter_callback(
-            subghz->variable_item_list,
-            subghz_scene_receiver_config_var_list_enter_callback,
-            subghz);
     }
     if(scene_manager_get_scene_state(subghz->scene_manager, SubGhzSceneReadRAW) !=
        SubGhzCustomEventManagerSet) {
         // Lock keyboard
         variable_item_list_add(subghz->variable_item_list, "Lock Keyboard", 1, NULL, NULL);
-        variable_item_list_set_enter_callback(
-            subghz->variable_item_list,
-            subghz_scene_receiver_config_var_list_enter_callback,
-            subghz);
     }
 
-    /* SETTINGS-03: Save and Load custom presets */
-    variable_item_list_add(
-        subghz->variable_item_list, "Save Preset As...", 1, NULL, NULL);
-    variable_item_list_set_enter_callback(
-        subghz->variable_item_list,
-        subghz_scene_receiver_config_var_list_enter_callback,
-        subghz);
-    variable_item_list_add(subghz->variable_item_list, "Load Preset", 1, NULL, NULL);
-    variable_item_list_set_enter_callback(
-        subghz->variable_item_list,
-        subghz_scene_receiver_config_var_list_enter_callback,
-        subghz);
+    if(scene_manager_get_scene_state(subghz->scene_manager, SubGhzSceneReadRAW) !=
+       SubGhzCustomEventManagerSet) {
+        /* SETTINGS-03: Save and Load custom presets.
+         * These items are at indices SubGhzSettingIndexSavePreset and
+         * SubGhzSettingIndexLoadPreset (16, 17 in non-RAW mode) which match
+         * their position in the VariableItemList only when all preceding items
+         * are present.  In RAW mode many items are skipped, so these are
+         * conditionally omitted — preset management doesn't apply to RAW
+         * capture configuration anyway. */
+        variable_item_list_add(
+            subghz->variable_item_list, "Save Preset As...", 1, NULL, NULL);
+        variable_item_list_add(
+            subghz->variable_item_list, "Load Preset", 1, NULL, NULL);
+    }
 
     if(scene_manager_get_scene_state(subghz->scene_manager, SubGhzSceneReadRAW) ==
        SubGhzCustomEventManagerSet) {
@@ -772,6 +765,12 @@ void subghz_scene_receiver_config_on_enter(void* context) {
         variable_item_set_current_value_index(item, value_index);
         variable_item_set_current_value_text(item, raw_threshold_rssi_text[value_index]);
     }
+
+    /* Single enter-callback registration after all items are added. */
+    variable_item_list_set_enter_callback(
+        subghz->variable_item_list,
+        subghz_scene_receiver_config_var_list_enter_callback,
+        subghz);
 
     variable_item_list_set_selected_item(
         subghz->variable_item_list,
