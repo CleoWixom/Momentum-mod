@@ -1,11 +1,23 @@
 #include "subghz_history.h"
 #include <lib/subghz/receiver.h>
+#include <lib/subghz/types.h>
 #include <rpc/rpc.h>
 
 #include <furi.h>
 
 #define SUBGHZ_HISTORY_MAX       65535 // uint16_t index max, ram limit below
 #define SUBGHZ_HISTORY_FREE_HEAP (10240 * (3 - MIN(rpc_get_sessions_count(instance->rpc), 2U)))
+
+/*
+ * HISTORY-03: deduplication window for static-protocol signals (ms).
+ * If a static-code signal with the same hash, protocol, and frequency arrives
+ * within this window of the most recent identical entry, the existing entry's
+ * repeat counter and timestamp are updated instead of adding a new row.
+ * Rolling-code protocols are never deduplicated because each transmission
+ * carries a unique counter value that the user may want to examine.
+ * Set to 2000 ms — generous enough to catch button-hold re-transmissions.
+ */
+#define SUBGHZ_HISTORY_DEDUP_WINDOW_MS 2000u
 
 #define TAG "SubGhzHistory"
 
@@ -242,26 +254,80 @@ bool subghz_history_add_to_history(
 
     SubGhzProtocolDecoderBase* decoder_base = context;
     uint32_t hash_data = subghz_protocol_decoder_base_get_hash_data_long(decoder_base);
+    uint32_t now = furi_get_tick();
+
+    /* Fast path: suppress rapid re-transmissions of the very last signal */
     if((instance->code_last_hash_data == hash_data) &&
-       ((furi_get_tick() - instance->last_update_timestamp) < 600)) {
-        instance->last_update_timestamp = furi_get_tick();
+       ((now - instance->last_update_timestamp) < 600)) {
+        instance->last_update_timestamp = now;
         return false;
     }
 
-    uint16_t repeats = 0;
-    SubGhzHistoryItemArray_it_t it;
-    SubGhzHistoryItemArray_it_last(it, instance->history->data);
-    while(!SubGhzHistoryItemArray_end_p(it)) {
-        SubGhzHistoryItem* search = SubGhzHistoryItemArray_ref(it);
-        if(search->hash_data == hash_data && search->protocol == decoder_base->protocol) {
-            repeats = search->repeats + 1;
-            break;
+    /*
+     * HISTORY-03: in-place deduplication for static-protocol signals.
+     *
+     * Rolling-code (Dynamic) and RAW protocols carry unique per-transmission
+     * data, so every received frame is a distinct event and must get its own
+     * history row.  Static-code remotes (garage doors, weather sensors, …)
+     * re-transmit the identical payload on every button press.  Adding a new
+     * row each time clutters the list without giving the user any new
+     * information.
+     *
+     * Strategy: scan backwards through history for an entry with the same
+     * hash + protocol + frequency.  If found within the dedup window, bump
+     * its repeat counter and refresh its timestamp instead of appending.
+     * Return false so the caller (scene_receiver) does NOT trigger a UI
+     * "new signal" notification.
+     */
+    bool is_static = (decoder_base->protocol->type == SubGhzProtocolTypeStatic);
+
+    if(is_static) {
+        SubGhzHistoryItemArray_it_t it;
+        SubGhzHistoryItemArray_it_last(it, instance->history->data);
+        while(!SubGhzHistoryItemArray_end_p(it)) {
+            SubGhzHistoryItem* search = SubGhzHistoryItemArray_ref(it);
+            if(search->hash_data == hash_data && search->protocol == decoder_base->protocol &&
+               search->preset->frequency == preset->frequency) {
+                /* Check we are still inside the dedup window */
+                uint32_t age_ms = (now > instance->last_update_timestamp) ?
+                                      (now - instance->last_update_timestamp) :
+                                      0;
+                if(age_ms < SUBGHZ_HISTORY_DEDUP_WINDOW_MS) {
+                    search->repeats++;
+                    furi_hal_rtc_get_datetime(&search->datetime);
+                    instance->code_last_hash_data = hash_data;
+                    instance->last_update_timestamp = now;
+                    FURI_LOG_D(
+                        TAG,
+                        "Dedup: updated repeat %u for hash %08lX",
+                        (unsigned)search->repeats,
+                        hash_data);
+                    return false; /* existing row updated — not a new entry */
+                }
+                break; /* outside window — fall through to append */
+            }
+            SubGhzHistoryItemArray_previous(it);
         }
-        SubGhzHistoryItemArray_previous(it);
+    }
+
+    /* Count prior repeats for the repeat field of a newly appended entry */
+    uint16_t repeats = 0;
+    if(!is_static) {
+        /* Dynamic/RAW: look back for repeat count as before */
+        SubGhzHistoryItemArray_it_t it2;
+        SubGhzHistoryItemArray_it_last(it2, instance->history->data);
+        while(!SubGhzHistoryItemArray_end_p(it2)) {
+            SubGhzHistoryItem* search = SubGhzHistoryItemArray_ref(it2);
+            if(search->hash_data == hash_data && search->protocol == decoder_base->protocol) {
+                repeats = search->repeats + 1;
+                break;
+            }
+            SubGhzHistoryItemArray_previous(it2);
+        }
     }
 
     instance->code_last_hash_data = hash_data;
-    instance->last_update_timestamp = furi_get_tick();
+    instance->last_update_timestamp = now;
 
     SubGhzHistoryItem* item = SubGhzHistoryItemArray_push_raw(instance->history->data);
     item->preset = malloc(sizeof(SubGhzRadioPreset));

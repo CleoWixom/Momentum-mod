@@ -332,55 +332,89 @@ void subghz_txrx_set_raw_file_encoder_worker_callback_end(
     void* context);
 
 /* Checking if an external radio device is connected
-* 
-* @param instance Pointer to a SubGhzTxRx
-* @param name Name of external radio device
-* @return bool True if is connected to the external radio device
-*/
+ *
+ * @param instance Pointer to a SubGhzTxRx
+ * @param name Name of external radio device
+ * @return bool True if is connected to the external radio device
+ */
 bool subghz_txrx_radio_device_is_external_connected(SubGhzTxRx* instance, const char* name);
 
 /* Set the selected radio device to use
-*
-* @param instance Pointer to a SubGhzTxRx
-* @param radio_device_type Radio device type
-* @return SubGhzRadioDeviceType Type of installed radio device
-*/
+ *
+ * @param instance Pointer to a SubGhzTxRx
+ * @param radio_device_type Radio device type
+ * @return SubGhzRadioDeviceType Type of installed radio device
+ */
 SubGhzRadioDeviceType
     subghz_txrx_radio_device_set(SubGhzTxRx* instance, SubGhzRadioDeviceType radio_device_type);
 
 /* Get the selected radio device to use
-*
-* @param instance Pointer to a SubGhzTxRx
-* @return SubGhzRadioDeviceType Type of installed radio device
-*/
+ *
+ * @param instance Pointer to a SubGhzTxRx
+ * @return SubGhzRadioDeviceType Type of installed radio device
+ */
 SubGhzRadioDeviceType subghz_txrx_radio_device_get(SubGhzTxRx* instance);
 
 /* Get RSSI the selected radio device to use
-*
-* @param instance Pointer to a SubGhzTxRx
-* @return float RSSI
-*/
+ *
+ * @param instance Pointer to a SubGhzTxRx
+ * @return float RSSI
+ */
 float subghz_txrx_radio_device_get_rssi(SubGhzTxRx* instance);
 
 /* Get name the selected radio device to use
-*
-* @param instance Pointer to a SubGhzTxRx
-* @return const char* Name of installed radio device
-*/
+ *
+ * @param instance Pointer to a SubGhzTxRx
+ * @return const char* Name of installed radio device
+ */
 const char* subghz_txrx_radio_device_get_name(SubGhzTxRx* instance);
 
 /* Get intelligence whether frequency the selected radio device to use
-*
-* @param instance Pointer to a SubGhzTxRx
-* @return bool True if the frequency is valid
-*/
+ *
+ * @param instance Pointer to a SubGhzTxRx
+ * @return bool True if the frequency is valid
+ */
 bool subghz_txrx_radio_device_is_frequency_valid(SubGhzTxRx* instance, uint32_t frequency);
 
+/**
+ * Check whether TX is permitted on the given frequency for the active radio device.
+ *
+ * Wraps subghz_devices_check_tx() to provide a single call site; this is the
+ * same gate enforced inside the low-level subghz_txrx_tx() helper (TXRX-01).
+ *
+ * @param instance   Pointer to a SubGhzTxRx.
+ * @param frequency  Frequency in Hz to check.
+ * @return SubGhzTx  SubGhzTxAllowed if transmitting is permitted, or one of
+ *                   the SubGhzTxBlocked* / SubGhzTxUnsupported values
+ *                   describing why it is not.
+ */
 SubGhzTx subghz_txrx_radio_device_check_tx(SubGhzTxRx* instance, uint32_t frequency);
 
+/**
+ * Enable or disable the debug output pin.
+ * When enabled the radio device mirrors its internal data line to the debug
+ * GPIO, which allows logic-analyser capture of raw OOK pulses.
+ *
+ * @param instance  Pointer to a SubGhzTxRx.
+ * @param state     true = enable, false = disable.
+ */
 void subghz_txrx_set_debug_pin_state(SubGhzTxRx* instance, bool state);
+
+/**
+ * Query the current debug-pin state.
+ *
+ * @param instance  Pointer to a SubGhzTxRx.
+ * @return true if the debug pin is currently enabled.
+ */
 bool subghz_txrx_get_debug_pin_state(SubGhzTxRx* instance);
 
+/**
+ * Reset the rolling-code sequence counter and any custom button bindings.
+ * Typically called before replaying a previously captured dynamic-code signal
+ * to ensure the counter starts at the expected value.
+ *
+ * @param instance  Pointer to a SubGhzTxRx.
+ */
 void subghz_txrx_reset_dynamic_and_custom_btns(SubGhzTxRx* instance);
 
 SubGhzReceiver* subghz_txrx_get_receiver(SubGhzTxRx* instance); // TODO use only in DecodeRaw

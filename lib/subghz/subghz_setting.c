@@ -9,6 +9,25 @@
 #define FREQUENCY_FLAG_DEFAULT (1 << 31)
 #define FREQUENCY_MASK         (0xFFFFFFFF ^ FREQUENCY_FLAG_DEFAULT)
 
+/*
+ * BUG-05: centralised frequency validator.
+ * All code paths (UI, RPC, file loading, hopper) must call this function
+ * instead of furi_hal_subghz_is_frequency_valid() directly, so that future
+ * policy changes (extended-range unlock, regional exclusions) only require
+ * edits in one place.
+ */
+bool subghz_setting_frequency_valid(uint32_t frequency) {
+    if(frequency == 0) {
+        FURI_LOG_W(TAG, "Frequency 0 Hz is not valid");
+        return false;
+    }
+    bool valid = furi_hal_subghz_is_frequency_valid(frequency);
+    if(!valid) {
+        FURI_LOG_W(TAG, "Frequency %lu Hz is outside supported range", frequency);
+    }
+    return valid;
+}
+
 /* Default */
 static const uint32_t subghz_frequency_list[] = {
     /* 300 - 348 */
@@ -250,7 +269,8 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
             while(flipper_format_read_uint32(
                 fff_data_file, "Frequency", (uint32_t*)&temp_data32, 1)) {
                 //Todo FL-3535: add a frequency support check depending on the selected radio device
-                if(furi_hal_subghz_is_frequency_valid(temp_data32)) {
+                // BUG-05: use centralised validator so policy changes apply everywhere
+                if(subghz_setting_frequency_valid(temp_data32)) {
                     FURI_LOG_I(TAG, "Frequency loaded %lu", temp_data32);
                     FrequencyList_push_back(instance->frequencies, temp_data32);
                 } else {
@@ -265,7 +285,8 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
             }
             while(flipper_format_read_uint32(
                 fff_data_file, "Hopper_frequency", (uint32_t*)&temp_data32, 1)) {
-                if(furi_hal_subghz_is_frequency_valid(temp_data32)) {
+                // BUG-05: use centralised validator
+                if(subghz_setting_frequency_valid(temp_data32)) {
                     FURI_LOG_I(TAG, "Hopper frequency loaded %lu", temp_data32);
                     FrequencyList_push_back(instance->hopper_frequencies, temp_data32);
                 } else {

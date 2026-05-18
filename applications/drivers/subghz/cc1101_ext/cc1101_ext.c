@@ -296,10 +296,13 @@ void subghz_device_cc1101_ext_free(void) {
 }
 
 void subghz_device_cc1101_ext_set_async_mirror_pin(const GpioPin* pin) {
+    /* ARCH-01: guard all public functions against NULL global pointer */
+    furi_assert(subghz_device_cc1101_ext != NULL);
     subghz_device_cc1101_ext->async_mirror_pin = pin;
 }
 
 const GpioPin* subghz_device_cc1101_ext_get_data_gpio(void) {
+    furi_assert(subghz_device_cc1101_ext != NULL);
     return subghz_device_cc1101_ext->g0_pin;
 }
 
@@ -400,6 +403,7 @@ void subghz_device_cc1101_ext_load_custom_preset(const uint8_t* preset_data) {
 }
 
 void subghz_device_cc1101_ext_load_registers(const uint8_t* data) {
+    furi_assert(subghz_device_cc1101_ext != NULL);
     subghz_device_cc1101_ext_reset();
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
     uint32_t i = 0;
@@ -411,12 +415,14 @@ void subghz_device_cc1101_ext_load_registers(const uint8_t* data) {
 }
 
 void subghz_device_cc1101_ext_load_patable(const uint8_t data[8]) {
+    furi_assert(subghz_device_cc1101_ext != NULL);
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
     cc1101_set_pa_table(subghz_device_cc1101_ext->spi_bus_handle, data);
     furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
 }
 
 void subghz_device_cc1101_ext_write_packet(const uint8_t* data, uint8_t size) {
+    furi_assert(subghz_device_cc1101_ext != NULL);
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
     cc1101_flush_tx(subghz_device_cc1101_ext->spi_bus_handle);
     cc1101_write_reg(subghz_device_cc1101_ext->spi_bus_handle, CC1101_FIFO, size);
@@ -425,12 +431,14 @@ void subghz_device_cc1101_ext_write_packet(const uint8_t* data, uint8_t size) {
 }
 
 void subghz_device_cc1101_ext_flush_rx(void) {
+    furi_assert(subghz_device_cc1101_ext != NULL);
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
     cc1101_flush_rx(subghz_device_cc1101_ext->spi_bus_handle);
     furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
 }
 
 void subghz_device_cc1101_ext_flush_tx(void) {
+    furi_assert(subghz_device_cc1101_ext != NULL);
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
     cc1101_flush_tx(subghz_device_cc1101_ext->spi_bus_handle);
     furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);

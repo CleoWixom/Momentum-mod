@@ -22,6 +22,21 @@ LIST_DEF(FrequencyList, uint32_t)
 
 typedef struct SubGhzSetting SubGhzSetting;
 
+/**
+ * Centralised frequency validator (BUG-05).
+ *
+ * Wraps furi_hal_subghz_is_frequency_valid() and provides a single call site
+ * for all code paths: UI, RPC, file loading, frequency hopper.  Callers that
+ * previously used furi_hal_subghz_is_frequency_valid() directly should be
+ * migrated here so that any future policy change (extended-range unlock, band
+ * exclusions) only needs to be applied in one place.
+ *
+ * @param frequency  Frequency in Hz to validate.
+ * @return true if the frequency is within a hardware-supported and
+ *         policy-allowed range, false otherwise.
+ */
+bool subghz_setting_frequency_valid(uint32_t frequency);
+
 SubGhzSetting* subghz_setting_alloc(void);
 
 void subghz_setting_free(SubGhzSetting* instance);

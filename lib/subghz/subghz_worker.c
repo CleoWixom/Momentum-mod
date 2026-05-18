@@ -17,7 +17,24 @@ struct SubGhzWorker {
     SubGhzWorkerOverrunCallback overrun_callback;
     SubGhzWorkerPairCallback pair_callback;
     void* context;
+
+    /*
+     * WORKER-01: rate-limiting state.
+     * Tracks the last time the pair_callback fired and the number of
+     * samples dropped due to rate limiting.  When the RF environment is very
+     * dense (e.g. busy parking lot with many remotes), the stream buffer can
+     * saturate and the FreeRTOS scheduler stalls.  A short cooldown after each
+     * callback prevents runaway CPU consumption without dropping unique signals.
+     */
+    uint32_t last_callback_tick;
+    uint32_t dropped_count;
 };
+
+/** Minimum gap between consecutive pair_callback invocations, in ms.
+ *  Signals arriving faster than this are assumed to be re-transmissions of
+ *  the same burst and are silently discarded.  30 ms covers the typical
+ *  inter-frame gap used by most rolling-code and static-code remotes. */
+#define SUBGHZ_WORKER_RATE_LIMIT_MS 30u
 
 /** Rx callback timer
  * 
@@ -63,11 +80,32 @@ static int32_t subghz_worker_thread_callback(void* context) {
                     instance->filter_level_duration.duration += duration;
 
                 } else if(instance->filter_level_duration.level != level) {
-                    if(instance->pair_callback)
-                        instance->pair_callback(
-                            instance->context,
-                            instance->filter_level_duration.level,
-                            instance->filter_level_duration.duration);
+                    /*
+                     * WORKER-01: rate-limit gate.
+                     * Only fire the callback if enough time has elapsed since
+                     * the last invocation.  This prevents CPU starvation when
+                     * many remotes are active simultaneously (dense RF).
+                     * furi_get_tick() returns FreeRTOS ticks (1 ms each).
+                     */
+                    uint32_t now = furi_get_tick();
+                    uint32_t elapsed = now - instance->last_callback_tick;
+                    if(elapsed >= SUBGHZ_WORKER_RATE_LIMIT_MS) {
+                        if(instance->pair_callback)
+                            instance->pair_callback(
+                                instance->context,
+                                instance->filter_level_duration.level,
+                                instance->filter_level_duration.duration);
+                        instance->last_callback_tick = now;
+                        if(instance->dropped_count > 0) {
+                            FURI_LOG_D(
+                                TAG,
+                                "Rate-limit: %lu samples dropped",
+                                (unsigned long)instance->dropped_count);
+                            instance->dropped_count = 0;
+                        }
+                    } else {
+                        instance->dropped_count++;
+                    }
 
                     instance->filter_level_duration.duration = duration;
                     instance->filter_level_duration.level = level;
@@ -100,6 +138,10 @@ SubGhzWorker* subghz_worker_alloc(void) {
 
     //setting default filter in us
     instance->filter_duration = 30;
+
+    /* WORKER-01: initialise rate-limit state */
+    instance->last_callback_tick = 0;
+    instance->dropped_count = 0;
 
     return instance;
 }
