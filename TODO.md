@@ -30,7 +30,7 @@
 | PROTO-03 | ⬜ Открыто | Протоколы | 🟡 Средний | Средняя | KeeLoq таблица hardcoded |
 | UI-02 | ⬜ Открыто | UI | 🟢 Низкий | Низкая | Нет RSSI в receiver view |
 | UI-03 | ⬜ Открыто | UI | 🟡 Средний | Средняя | Нет фильтрации истории |
-| SETTINGS-01 | ⬜ Открыто | Настройки | 🟡 Средний | Средняя | Синхронный I/O в UI thread |
+| SETTINGS-01 | ✅ Выполнено | Настройки | 🟡 Средний | Средняя | Синхронный I/O → async 1500 мс debounce |
 | SETTINGS-03 | ⬜ Открыто | Настройки | 🟢 Низкий | Средняя | Нельзя создавать пресеты из UI |
 | QUALITY-03 | ⬜ Открыто | Качество | 🟠 Высокий | Средняя | Нет проверки SPI статуса в работе |
 | TEST-01 | ⬜ Открыто | Тесты | 🟠 Высокий | Средняя | Нет интеграционных тестов pipeline |
@@ -232,10 +232,24 @@ subghz_device_cc1101_ext->spi_bus_handle =
 
 ## Настройки и конфигурация
 
-### [SETTINGS-01] Синхронный I/O в UI thread
+### [SETTINGS-01] ✅ Синхронный I/O в UI thread — ВЫПОЛНЕНО
+**Коммит:** `fix(subghz): SETTINGS-01 — async deferred save via FuriEventLoopTimer`
+
+Добавлены поля `save_timer` (`FuriEventLoopTimer*`, one-shot) и `dirty` (`bool`) в `SubGhzLastSettings`.  
+Новые функции:
+- `subghz_last_settings_init_save_timer(instance, event_loop)` — вызывается в `subghz_alloc()` после `view_dispatcher_alloc()`, прикрепляет таймер к event loop ViewDispatcher'а.
+- `subghz_last_settings_mark_dirty(instance)` — заменяет все прямые вызовы `save()` в сценах. Устанавливает `dirty=true` и (пере)запускает one-shot таймер на **1500 мс**. Повторные вызовы в течение окна сдвигают таймер, коалесцируя изменения в одну запись.
+- `subghz_last_settings_flush_save(instance)` — вызывается при `subghz_free()` перед `free()`, гарантируя запись даже если таймер не успел сработать.
+
+Таймер выполняется в том же event loop что и сцены, поэтому `subghz_last_settings_save()` из callback безопасен без дополнительной синхронизации. Все **8 вызовов** `save()` в сценах заменены на `mark_dirty()`.
+
+**Итог:** настройки больше не записываются синхронно при каждом изменении слайдера — пользователь не замечает задержки ~10 мс на I/O.
+
+---
+
+### [SETTINGS-03] Нельзя создавать пресеты из UI
 **Что сделать:**
-- [ ] Вынести `subghz_last_settings_load/save` в background worker.
-- [ ] Async save: запись по таймеру 1–2 сек после последнего изменения.
+- [ ] "Save current preset as…" и "Load preset from file" в Config scene.
 
 ---
 

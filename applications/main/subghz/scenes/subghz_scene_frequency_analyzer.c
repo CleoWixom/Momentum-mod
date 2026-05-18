@@ -64,7 +64,7 @@ bool subghz_scene_frequency_analyzer_on_event(void* context, SceneManagerEvent e
                 if(subghz->last_settings->enable_hopping) {
                     subghz->last_settings->enable_hopping = false;
                 }
-                subghz_last_settings_save(subghz->last_settings);
+                subghz_last_settings_mark_dirty(subghz->last_settings);
             }
 
             return true;
@@ -87,5 +87,5 @@ void subghz_scene_frequency_analyzer_on_exit(void* context) {
         subghz_frequency_analyzer_feedback_level(subghz->subghz_frequency_analyzer, 0, false);
     subghz->last_settings->frequency_analyzer_trigger =
         subghz_frequency_analyzer_get_trigger_level(subghz->subghz_frequency_analyzer);
-    subghz_last_settings_save(subghz->last_settings);
+    subghz_last_settings_mark_dirty(subghz->last_settings);
 }

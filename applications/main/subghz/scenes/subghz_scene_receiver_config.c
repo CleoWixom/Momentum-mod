@@ -497,7 +497,7 @@ static void subghz_scene_receiver_config_var_list_enter_callback(void* context, 
         variable_item_list_set_selected_item(subghz->variable_item_list, default_index);
         variable_item_list_reset(subghz->variable_item_list);
 
-        subghz_last_settings_save(subghz->last_settings);
+        subghz_last_settings_mark_dirty(subghz->last_settings);
 
         view_dispatcher_send_custom_event(
             subghz->view_dispatcher, SubGhzCustomEventSceneSettingResetToDefault);
@@ -791,7 +791,7 @@ void subghz_scene_receiver_config_on_exit(void* context) {
     variable_item_list_set_selected_item(subghz->variable_item_list, 0);
     variable_item_list_reset(subghz->variable_item_list);
 
-    subghz_last_settings_save(subghz->last_settings);
+    subghz_last_settings_mark_dirty(subghz->last_settings);
     scene_manager_set_scene_state(
         subghz->scene_manager, SubGhzSceneReadRAW, SubGhzCustomEventManagerNoSet);
 }
