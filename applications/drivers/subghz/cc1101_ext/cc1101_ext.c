@@ -306,30 +306,85 @@ const GpioPin* subghz_device_cc1101_ext_get_data_gpio(void) {
     return subghz_device_cc1101_ext->g0_pin;
 }
 
-bool subghz_device_cc1101_ext_is_connect(void) {
-    bool ret = false;
+/**
+ * Lightweight SPI probe: bring the CC1101 SPI handle up, read the VERSION
+ * status register, then bring it back down.  Called only when the driver is
+ * not yet allocated (subghz_device_cc1101_ext == NULL).
+ *
+ * Why VERSION and not PARTNUM?
+ *   CC1101 PARTNUM (0x30) is always 0x00 on every known silicon revision.
+ *   When the chip is absent and MISO is pulled low by GpioPullDown (set during
+ *   SPI Activate), PARTNUM also reads 0x00 — indistinguishable from a live
+ *   chip.  VERSION (0x31) is 0x14 on TI silicon and non-zero on every known
+ *   clone, while an absent chip gives 0x00.  A simple "!= 0" check is
+ *   therefore sufficient.
+ *
+ * Why not alloc() + free()?
+ *   alloc() calls check_init() which resets the chip and runs a full GDO0
+ *   self-test with a 100 ms timeout — all unnecessary just to verify the chip
+ *   is present.  The probe below runs in < 1 ms.
+ *
+ * GPIO housekeeping mirrors alloc() / free() exactly:
+ *   SpiDefault — bus_handle_init sets pa4 (handle->cs) as OutputPushPull/high;
+ *                bus_handle_deinit resets pa4 to Analog.  No extra CS work needed.
+ *   SpiExtra   — bus_handle_init sets pc3 (handle->cs) as OutputPushPull/high
+ *                (CC1101 CS).  pa4 is an independent CS for the second SPI
+ *                device sharing the bus (e.g. NRF24); it must be driven high
+ *                for the duration of the probe so that device stays deselected,
+ *                then returned to Analog — mirroring alloc()'s explicit init
+ *                and free()'s cleanup via cs_pin.
+ */
+static bool subghz_device_cc1101_ext_probe(void) {
+    const FuriHalSpiBusHandle* spi_handle =
+        (momentum_settings.spi_cc1101_handle == SpiDefault ?
+             &furi_hal_spi_bus_handle_external :
+             &furi_hal_spi_bus_handle_external_extra);
 
-    if(subghz_device_cc1101_ext == NULL) {
-        /*
-         * BUG-02 fix: previously alloc() was always followed by free()
-         * regardless of whether alloc succeeded.  If alloc() returns false,
-         * the CC1101 chip did not respond in check_init(); the global pointer
-         * is still set (alloc always mallocs before calling check_init), so
-         * free() is technically safe — but it would deinit an SPI handle that
-         * was never fully initialised.  Guard the call explicitly.
-         */
-        ret = subghz_device_cc1101_ext_alloc(NULL);
-        if(subghz_device_cc1101_ext != NULL) {
-            subghz_device_cc1101_ext_free();
-        }
-    } else {
-        furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
-        uint8_t partnumber = cc1101_get_partnumber(subghz_device_cc1101_ext->spi_bus_handle);
-        furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
-        ret = (partnumber != 0) && (partnumber != 0xFF);
+    bool extra_cs_driven = (momentum_settings.spi_cc1101_handle == SpiExtra);
+    if(extra_cs_driven) {
+        furi_hal_gpio_init_simple(&gpio_ext_pa4, GpioModeOutputPushPull);
+        furi_hal_gpio_write(&gpio_ext_pa4, true);
     }
 
-    return ret;
+    furi_hal_spi_bus_handle_init(spi_handle);
+    furi_hal_spi_acquire(spi_handle);
+
+    uint8_t version = cc1101_get_version(spi_handle);
+
+    furi_hal_spi_release(spi_handle);
+    furi_hal_spi_bus_handle_deinit(spi_handle);
+
+    if(extra_cs_driven) {
+        furi_hal_gpio_init_simple(&gpio_ext_pa4, GpioModeAnalog);
+    }
+
+    FURI_LOG_D(TAG, "CC1101 probe: VERSION=0x%02X -> %s", version, version ? "present" : "absent");
+    return version != 0;
+}
+
+bool subghz_device_cc1101_ext_is_connect(void) {
+    if(subghz_device_cc1101_ext == NULL) {
+        /*
+         * BUG-02 full fix: use a lightweight SPI probe instead of the previous
+         * alloc() + free() sequence.  alloc() performs a full 100 ms GDO0
+         * self-test inside check_init() before returning — expensive, blocking,
+         * and entirely unnecessary just to verify the chip is present.
+         * subghz_device_cc1101_ext_probe() reads the VERSION register in < 1 ms
+         * with no malloc and no GPIO self-test.
+         */
+        return subghz_device_cc1101_ext_probe();
+    }
+
+    /*
+     * Device is already initialised: the SPI handle is up, so we can read
+     * directly.  Use VERSION for the same reason as in probe() — PARTNUM is
+     * always 0x00 on CC1101 and cannot be used to distinguish "chip present"
+     * from "bus reads all-zero".
+     */
+    furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
+    uint8_t version = cc1101_get_version(subghz_device_cc1101_ext->spi_bus_handle);
+    furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
+    return version != 0;
 }
 
 void subghz_device_cc1101_ext_sleep(void) {
