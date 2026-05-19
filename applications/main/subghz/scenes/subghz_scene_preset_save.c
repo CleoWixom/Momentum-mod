@@ -23,11 +23,11 @@
  * -------------------------------------------------------------------------
  */
 
-#define SUBGHZ_PRESET_FOLDER        EXT_PATH("subghz/presets")
-#define SUBGHZ_PRESET_FILE_EXT      ".sgp"
-#define SUBGHZ_PRESET_FILE_TYPE     "Flipper SubGhz Preset"
-#define SUBGHZ_PRESET_FILE_VERSION  1
-#define SUBGHZ_PRESET_MAX_NAME      SUBGHZ_MAX_LEN_NAME
+#define SUBGHZ_PRESET_FOLDER       EXT_PATH("subghz/presets")
+#define SUBGHZ_PRESET_FILE_EXT     ".sgp"
+#define SUBGHZ_PRESET_FILE_TYPE    "Flipper SubGhz Preset"
+#define SUBGHZ_PRESET_FILE_VERSION 1
+#define SUBGHZ_PRESET_MAX_NAME     SUBGHZ_MAX_LEN_NAME
 
 /** State flag stored in scene state to distinguish save vs load entry. */
 #define SUBGHZ_PRESET_SCENE_SAVE 0u
@@ -95,8 +95,7 @@ static void subghz_scene_preset_save_text_input_callback(void* context) {
 
 void subghz_scene_preset_save_on_enter(void* context) {
     SubGhz* subghz = context;
-    uint32_t mode =
-        scene_manager_get_scene_state(subghz->scene_manager, SubGhzScenePresetSave);
+    uint32_t mode = scene_manager_get_scene_state(subghz->scene_manager, SubGhzScenePresetSave);
 
     if(mode == SUBGHZ_PRESET_SCENE_LOAD) {
         /* ---- Load path: open file browser ---- */
@@ -107,8 +106,8 @@ void subghz_scene_preset_save_on_enter(void* context) {
         dialog_file_browser_set_basic_options(&browser_opts, SUBGHZ_PRESET_FILE_EXT, NULL);
         browser_opts.base_path = SUBGHZ_PRESET_FOLDER;
 
-        bool selected = dialog_file_browser_show(
-            subghz->dialogs, preset_path, preset_path, &browser_opts);
+        bool selected =
+            dialog_file_browser_show(subghz->dialogs, preset_path, preset_path, &browser_opts);
 
         if(selected) {
             /* Read the preset data from the .sgp file */
@@ -152,23 +151,18 @@ void subghz_scene_preset_save_on_enter(void* context) {
 
             if(loaded) {
                 /* Switch to the freshly loaded preset */
-                size_t new_idx =
-                    (size_t)subghz_setting_get_preset_count(subghz_txrx_get_setting(subghz->txrx)) - 1;
+                size_t new_idx = (size_t)subghz_setting_get_preset_count(
+                                     subghz_txrx_get_setting(subghz->txrx)) -
+                                 1;
                 const char* new_name =
                     subghz_setting_get_preset_name(subghz_txrx_get_setting(subghz->txrx), new_idx);
-                uint8_t* new_data = subghz_setting_get_preset_data(
-                    subghz_txrx_get_setting(subghz->txrx), new_idx);
+                uint8_t* new_data =
+                    subghz_setting_get_preset_data(subghz_txrx_get_setting(subghz->txrx), new_idx);
                 size_t new_size = subghz_setting_get_preset_data_size(
                     subghz_txrx_get_setting(subghz->txrx), new_idx);
                 SubGhzRadioPreset cur = subghz_txrx_get_preset(subghz->txrx);
                 subghz_txrx_set_preset(
-                    subghz->txrx,
-                    new_name,
-                    cur.frequency,
-                    NAN,
-                    NAN,
-                    new_data,
-                    new_size);
+                    subghz->txrx, new_name, cur.frequency, NAN, NAN, new_data, new_size);
                 subghz->last_settings->preset_index = (uint32_t)new_idx;
                 subghz_last_settings_mark_dirty(subghz->last_settings);
 
@@ -192,10 +186,7 @@ void subghz_scene_preset_save_on_enter(void* context) {
 
     /* Pre-fill with the current preset name */
     SubGhzRadioPreset cur = subghz_txrx_get_preset(subghz->txrx);
-    strlcpy(
-        subghz->file_name_tmp,
-        furi_string_get_cstr(cur.name),
-        SUBGHZ_PRESET_MAX_NAME);
+    strlcpy(subghz->file_name_tmp, furi_string_get_cstr(cur.name), SUBGHZ_PRESET_MAX_NAME);
 
     text_input_set_header_text(text_input, "Preset name");
     text_input_set_result_callback(
@@ -231,26 +222,15 @@ bool subghz_scene_preset_save_on_event(void* context, SceneManagerEvent event) {
                 furi_string_set(subghz->error_str, "Name already taken");
                 scene_manager_next_scene(subghz->scene_manager, SubGhzSceneShowErrorSub);
             } else if(
-                subghz_setting_save_custom_preset(
-                    setting, name, cur.data, cur.data_size) &&
+                subghz_setting_save_custom_preset(setting, name, cur.data, cur.data_size) &&
                 subghz_scene_preset_save_write_sgp(name, cur.data, cur.data_size)) {
                 /* Switch active modulation to the newly saved preset */
-                size_t new_idx =
-                    (size_t)subghz_setting_get_preset_count(setting) - 1;
-                const char* new_name =
-                    subghz_setting_get_preset_name(setting, new_idx);
-                uint8_t* new_data =
-                    subghz_setting_get_preset_data(setting, new_idx);
-                size_t new_size =
-                    subghz_setting_get_preset_data_size(setting, new_idx);
+                size_t new_idx = (size_t)subghz_setting_get_preset_count(setting) - 1;
+                const char* new_name = subghz_setting_get_preset_name(setting, new_idx);
+                uint8_t* new_data = subghz_setting_get_preset_data(setting, new_idx);
+                size_t new_size = subghz_setting_get_preset_data_size(setting, new_idx);
                 subghz_txrx_set_preset(
-                    subghz->txrx,
-                    new_name,
-                    cur.frequency,
-                    NAN,
-                    NAN,
-                    new_data,
-                    new_size);
+                    subghz->txrx, new_name, cur.frequency, NAN, NAN, new_data, new_size);
                 subghz->last_settings->preset_index = (uint32_t)new_idx;
                 subghz_last_settings_mark_dirty(subghz->last_settings);
 

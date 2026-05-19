@@ -105,7 +105,7 @@ jobs:
       - name: "Build the firmware and apps"
         id: build-fw
         run: |
-          ./fbt TARGET_HW=$TARGET_HW $FBT_BUILD_TYPE copro_dist updater_package fap_dist
+          ./fbt TARGET_HW=$TARGET_HW $FBT_BUILD_TYPE COPRO_DISCLAIMER='--I-understand-what-I-am-doing=yes' copro_dist updater_package fap_dist
           echo "firmware_api=$(./fbt TARGET_HW=$TARGET_HW get_apiversion)" >> $GITHUB_OUTPUT
 
       - name: "Check for uncommitted changes"

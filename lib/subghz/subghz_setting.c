@@ -496,8 +496,7 @@ bool subghz_setting_save_custom_preset(
         flipper_format_rewind(fff_mem);
         result = subghz_setting_load_custom_preset(instance, preset_name, fff_mem);
         flipper_format_free(fff_mem);
-        FURI_LOG_I(
-            TAG, "Preset '%s' saved (%zu bytes)", preset_name, preset_data_size);
+        FURI_LOG_I(TAG, "Preset '%s' saved (%zu bytes)", preset_name, preset_data_size);
     }
     return result;
 }
