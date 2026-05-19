@@ -108,6 +108,86 @@ jobs:
           ./fbt TARGET_HW=$TARGET_HW $FBT_BUILD_TYPE COPRO_DISCLAIMER='--I-understand-what-I-am-doing=yes' copro_dist updater_package fap_dist
           echo "firmware_api=$(./fbt TARGET_HW=$TARGET_HW get_apiversion)" >> $GITHUB_OUTPUT
 
+      - name: "Firmware flash usage report"
+        # Runs on every build — not just PRs — so flash consumption is always
+        # visible in the job log and caught early on dev pushes.
+        #
+        # Thresholds (tunable via env vars if needed):
+        #   WARN_KB  = 16 KB  → yellow warning in log, build continues
+        #   ERROR_KB =  0 KB  → gap is negative (actual overlap); build fails
+        #                        (redundant with COPRO_DISCLAIMER but kept as
+        #                        a safety net in case the disclaimer is removed)
+        run: |
+          set -e
+
+          # ── 1. Locate arm-none-eabi-size from the fbt toolchain ──────────
+          SIZE_BIN=$(find ~/.fbt_toolchain -name "arm-none-eabi-size" 2>/dev/null | head -1)
+          if [ -z "$SIZE_BIN" ]; then
+            echo "::warning::arm-none-eabi-size not found in ~/.fbt_toolchain — skipping ELF section breakdown"
+            SIZE_BIN="size"   # fall back to host size (may not parse ARM ELF correctly)
+          fi
+
+          ELF="build/f7-firmware/firmware.elf"
+          if [ ! -f "$ELF" ]; then
+            echo "::error::$ELF not found — was the build step skipped?"
+            exit 1
+          fi
+
+          # ── 2. ELF section sizes (.text / .data / .bss) ──────────────────
+          echo "=== ELF section sizes ==="
+          "$SIZE_BIN" --format=sysv "$ELF" | grep -E "^\.text|^\.data|^\.bss|^\.rodata|Total" ||           "$SIZE_BIN" "$ELF"
+
+          # ── 3. Flat binary size (= actual flash consumption) ─────────────
+          BIN=$(ls dist/${TARGET}-*/flipper-z-${TARGET}-full-*.bin 2>/dev/null | head -1)
+          if [ -z "$BIN" ]; then
+            # Fall back to DFU (same content with ~16-byte DFU header)
+            BIN=$(ls dist/${TARGET}-*/flipper-z-${TARGET}-full-*.dfu 2>/dev/null | head -1)
+          fi
+          if [ -z "$BIN" ]; then
+            echo "::warning::full.bin / full.dfu not found in dist/ — skipping gap check"
+            exit 0
+          fi
+
+          fw_size=$(du --apparent-size -B 1 "$BIN" | cut -f1)
+          fw_size_kb=$((fw_size / 1024))
+
+          # ── 4. C2 radio stack address from copro manifest ─────────────────
+          if [ ! -f core2_firmware/Manifest.json ]; then
+            tar xzf build/core2_firmware.tgz 2>/dev/null || true
+          fi
+          if [ -f core2_firmware/Manifest.json ]; then
+            radio_addr=$(jq -r '.copro.radio.files[0].address' core2_firmware/Manifest.json)
+          else
+            # Hard-coded fallback for STM32WB55 (standard Flipper Zero radio addr)
+            radio_addr=0x080BD800
+            echo "::warning::core2_firmware/Manifest.json not found — using fallback radio_addr=$radio_addr"
+          fi
+
+          flash_base=0x8000000
+          warn_threshold_bytes=$((16 * 1024))    # 16 KB warning threshold
+          gap=$((radio_addr - flash_base - fw_size))
+          gap_kb=$((gap / 1024))
+
+          # ── 5. Human-readable report ──────────────────────────────────────
+          echo ""
+          echo "=== Firmware flash usage ==="
+          echo "  Firmware binary : ${fw_size_kb} KB  (${fw_size} bytes)"
+          echo "  C2 radio base   : $(printf '0x%08X' $radio_addr)"
+          echo "  Flash base      : $(printf '0x%08X' $flash_base)"
+          echo "  Gap to C2       : ${gap_kb} KB  (${gap} bytes)"
+
+          if [ "$gap" -lt 0 ]; then
+            echo ""
+            echo "::error::Firmware OVERLAPS C2 region by $(( -gap / 1024 )) KB! Radio stack will be corrupted on flash."
+            echo "  Reduce code size before merging to release."
+            exit 1
+          elif [ "$gap" -lt "$warn_threshold_bytes" ]; then
+            echo ""
+            echo "::warning::Gap to C2 region is only ${gap_kb} KB (threshold: 16 KB). Consider reducing firmware size."
+          else
+            echo "  Status          : OK (${gap_kb} KB free before C2 boundary)"
+          fi
+
       - name: "Check for uncommitted changes"
         run: |
           git diff --exit-code
