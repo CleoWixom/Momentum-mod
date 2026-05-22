@@ -20,6 +20,16 @@ static const uint8_t subghz_preset_ook_650khz[][2] = {
     {0, 0},
 };
 
+/** IIR smoothing coefficient for RSSI: α=0.25 → ~3 samples to 95% of true value.
+ *  Higher α = faster response but noisier; lower α = smoother but slower. */
+#define SUBGHZ_FA_RSSI_IIR_ALPHA 0.25f
+
+/** RSSI-03: AGC settle window (samples).  CC1101 AGCCTRL0 is set to 16-sample
+ *  averaging (0b00010000) in FA mode so AGC settles in ~16 symbols ≈ 3 ms at
+ *  the configured symbol rate — comfortably within the 4 ms per-frequency dwell. */
+#define SUBGHZ_FA_AGCCTRL0_MEASURE 0b00010000 /* 16 samples, 4 dB boundary */
+#define SUBGHZ_FA_AGCCTRL0_DEFAULT 0b00110000 /* 64 samples (CC1101 reset value) */
+
 struct SubGhzFrequencyAnalyzerWorker {
     FuriThread* thread;
 
@@ -30,6 +40,13 @@ struct SubGhzFrequencyAnalyzerWorker {
 
     float filVal;
     float trigger_level;
+    /**
+     * RSSI-02: per-session IIR-filtered RSSI.  Smooths out single-sample
+     * noise (±3-5 dBm typical) by exponential moving average.
+     * Reset to 0.0f whenever the reported frequency changes.
+     */
+    float rssi_iir;
+    uint32_t rssi_iir_frequency; /* track frequency to reset IIR on channel change */
 
     SubGhzFrequencyAnalyzerWorkerPairCallback pair_callback;
     void* context;
@@ -96,7 +113,16 @@ static int32_t subghz_frequency_analyzer_worker_thread(void* context) {
     cc1101_write_reg(
         &furi_hal_spi_bus_handle_subghz,
         CC1101_AGCCTRL0,
-        0b00110000); // 00 - No hysteresis, medium asymmetric dead zone, medium gain ; 11 - 64 samples agc; 00 - Normal AGC, 00 - 4dB boundary
+        /*
+         * RSSI-03: use 16-sample AGC window instead of the CC1101 reset-value
+         * 64-sample window.  At the configured symbol rate a 16-sample window
+         * settles in ~3 ms — within the 4 ms per-frequency dwell — so RSSI
+         * readings are accurate even during fast hopping.  The 64-sample
+         * default needs ~13 ms, which is longer than the dwell and causes
+         * readings to be 5-10 dBm low on initial settle.
+         * Bits: 00=no hysteresis, 01=16 samples, 00=normal AGC, 00=4dB boundary
+         */
+        SUBGHZ_FA_AGCCTRL0_MEASURE);
 
     furi_hal_spi_release(&furi_hal_spi_bus_handle_subghz);
 
@@ -208,12 +234,26 @@ static int32_t subghz_frequency_analyzer_worker_thread(void* context) {
                     subghz_frequency_analyzer_worker_expRunningAverageAdaptive(
                         instance, frequency_rssi.frequency_fine);
             }
+
+            /*
+             * RSSI-02: apply IIR low-pass filter to RSSI before delivery.
+             * Resets the accumulator when the reported channel changes so
+             * the filtered value reflects the current frequency only.
+             */
+            if(instance->rssi_iir_frequency != frequency_rssi.frequency_fine) {
+                instance->rssi_iir = frequency_rssi.rssi_fine; /* snap on channel change */
+                instance->rssi_iir_frequency = frequency_rssi.frequency_fine;
+            } else {
+                instance->rssi_iir = (1.0f - SUBGHZ_FA_RSSI_IIR_ALPHA) * instance->rssi_iir +
+                                     SUBGHZ_FA_RSSI_IIR_ALPHA * frequency_rssi.rssi_fine;
+            }
+
             // Deliver callback
             if(instance->pair_callback) {
                 instance->pair_callback(
                     instance->context,
                     frequency_rssi.frequency_fine,
-                    frequency_rssi.rssi_fine,
+                    instance->rssi_iir, /* smoothed RSSI */
                     true);
             }
         } else if( // Deliver results coarse
@@ -233,12 +273,22 @@ static int32_t subghz_frequency_analyzer_worker_thread(void* context) {
                     subghz_frequency_analyzer_worker_expRunningAverageAdaptive(
                         instance, frequency_rssi.frequency_coarse);
             }
+
+            /* RSSI-02: IIR filter for coarse result (same logic as fine path) */
+            if(instance->rssi_iir_frequency != frequency_rssi.frequency_coarse) {
+                instance->rssi_iir = frequency_rssi.rssi_coarse;
+                instance->rssi_iir_frequency = frequency_rssi.frequency_coarse;
+            } else {
+                instance->rssi_iir = (1.0f - SUBGHZ_FA_RSSI_IIR_ALPHA) * instance->rssi_iir +
+                                     SUBGHZ_FA_RSSI_IIR_ALPHA * frequency_rssi.rssi_coarse;
+            }
+
             // Deliver callback
             if(instance->pair_callback) {
                 instance->pair_callback(
                     instance->context,
                     frequency_rssi.frequency_coarse,
-                    frequency_rssi.rssi_coarse,
+                    instance->rssi_iir, /* smoothed RSSI */
                     true);
             }
         } else {
@@ -274,7 +324,8 @@ SubGhzFrequencyAnalyzerWorker* subghz_frequency_analyzer_worker_alloc(void* cont
     SubGhz* subghz = context;
     instance->setting = subghz_txrx_get_setting(subghz->txrx);
     instance->trigger_level = subghz->last_settings->frequency_analyzer_trigger;
-    //instance->trigger_level = SUBGHZ_FREQUENCY_ANALYZER_THRESHOLD;
+    instance->rssi_iir = 0.0f;
+    instance->rssi_iir_frequency = 0;
     return instance;
 }
 

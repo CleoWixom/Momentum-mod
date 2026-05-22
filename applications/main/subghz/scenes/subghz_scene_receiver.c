@@ -142,6 +142,14 @@ static void subghz_scene_add_to_history_callback(
         preset.latitude = 0;
         preset.longitude = 0;
     }
+    /*
+     * RSSI-01 / RSSI-04: capture RSSI at the moment the decoder callback
+     * fires.  The CC1101 RSSI register is frozen after the last symbol is
+     * received and remains valid until the next RX or IDLE transition, so
+     * reading it here (inside the decoder callback, before any state change)
+     * gives the most accurate value for the received packet.
+     */
+    preset.rssi = furi_hal_subghz_get_rssi();
 
     if(subghz->last_settings->delete_old_signals && subghz_history_full(subghz->history)) {
         subghz_view_receiver_disable_draw_callback(subghz->subghz_receiver);

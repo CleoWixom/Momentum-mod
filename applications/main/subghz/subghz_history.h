@@ -177,6 +177,14 @@ float subghz_history_get_latitude(SubGhzHistory* instance, uint16_t idx);
 */
 float subghz_history_get_longitude(SubGhzHistory* instance, uint16_t idx);
 
+/** Get RSSI at receive time from history[idx]
+ *
+ * @param instance  - SubGhzHistory instance
+ * @param idx       - record index
+ * @return rssi     - signal strength in dBm (0.0f if unknown)
+ */
+float subghz_history_get_rssi(SubGhzHistory* instance, uint16_t idx);
+
 // Consolidate history removing existing duplicates
 void subghz_history_remove_duplicates(SubGhzHistory* instance);
 

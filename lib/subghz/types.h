@@ -39,6 +39,12 @@ typedef struct {
     size_t data_size;
     float latitude;
     float longitude;
+    /**
+     * RSSI-04: signal strength at the moment the decoder callback fired.
+     * Populated by the scene callback from furi_hal_subghz_get_rssi() and
+     * stored alongside each history item.  Initialised to 0.0f (unknown).
+     */
+    float rssi;
 } SubGhzRadioPreset;
 
 typedef enum {

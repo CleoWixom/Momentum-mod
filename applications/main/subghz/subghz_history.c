@@ -32,6 +32,8 @@ typedef struct {
     uint16_t repeats;
     float latitude;
     float longitude;
+    /** RSSI-04: signal strength (dBm) captured when this entry was received. */
+    float rssi;
 } SubGhzHistoryItem;
 
 ARRAY_DEF(SubGhzHistoryItemArray, SubGhzHistoryItem, M_POD_OPLIST) //-V658
@@ -240,7 +242,17 @@ void subghz_history_get_text_item_menu(SubGhzHistory* instance, FuriString* outp
 void subghz_history_get_time_item_menu(SubGhzHistory* instance, FuriString* output, uint16_t idx) {
     SubGhzHistoryItem* item = SubGhzHistoryItemArray_get(instance->history->data, idx);
     DateTime* t = &item->datetime;
-    furi_string_printf(output, "%.2d:%.2d:%.2d ", t->hour, t->minute, t->second);
+    /*
+     * RSSI-04: append RSSI to the time string so the receiver list shows
+     * "HH:MM:SS -76dBm" in the right column without requiring a new view.
+     * When RSSI is unknown (0.0f) only the time is shown.
+     */
+    if(item->rssi != 0.0f) {
+        furi_string_printf(
+            output, "%.2d:%.2d:%.2d %ddBm", t->hour, t->minute, t->second, (int)item->rssi);
+    } else {
+        furi_string_printf(output, "%.2d:%.2d:%.2d ", t->hour, t->minute, t->second);
+    }
 }
 
 bool subghz_history_add_to_history(
@@ -293,8 +305,28 @@ bool subghz_history_add_to_history(
                                       (now - instance->last_update_timestamp) :
                                       0;
                 if(age_ms < SUBGHZ_HISTORY_DEDUP_WINDOW_MS) {
+                    /*
+                     * RSSI-04: if the new signal is significantly stronger or
+                     * weaker than the stored entry, treat it as a different
+                     * physical device (different TX power / distance) and let
+                     * it through as a new history row.  Threshold: 15 dBm —
+                     * large enough to distinguish devices, small enough not
+                     * to split a single device's RSSI fluctuations.
+                     */
+                    if(preset->rssi != 0.0f && search->rssi != 0.0f &&
+                       fabsf(preset->rssi - search->rssi) > 15.0f) {
+                        FURI_LOG_D(
+                            TAG,
+                            "Dedup skip: RSSI delta %.1f dBm (%.1f vs %.1f) — different device",
+                            (double)fabsf(preset->rssi - search->rssi),
+                            (double)preset->rssi,
+                            (double)search->rssi);
+                        break; /* fall through to append as new entry */
+                    }
                     search->repeats++;
                     furi_hal_rtc_get_datetime(&search->datetime);
+                    /* Update RSSI to latest measurement */
+                    if(preset->rssi != 0.0f) search->rssi = preset->rssi;
                     instance->code_last_hash_data = hash_data;
                     instance->last_update_timestamp = now;
                     FURI_LOG_D(
@@ -348,6 +380,8 @@ bool subghz_history_add_to_history(
     item->repeats = repeats;
     item->latitude = preset->latitude;
     item->longitude = preset->longitude;
+    /* RSSI-04: store signal strength captured at decode time. */
+    item->rssi = preset->rssi;
 
     item->item_str = furi_string_alloc();
     item->flipper_string = flipper_format_string_alloc();
@@ -422,6 +456,12 @@ bool subghz_history_add_to_history(
     furi_string_free(text);
     instance->last_index_write++;
     return true;
+}
+
+float subghz_history_get_rssi(SubGhzHistory* instance, uint16_t idx) {
+    furi_assert(instance);
+    SubGhzHistoryItem* item = SubGhzHistoryItemArray_get(instance->history->data, idx);
+    return item ? item->rssi : 0.0f;
 }
 
 void subghz_history_remove_duplicates(SubGhzHistory* instance) {
