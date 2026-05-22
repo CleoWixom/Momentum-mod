@@ -52,17 +52,12 @@ static void subghz_last_settings_save_timer_callback(void* context) {
     }
 }
 
-void subghz_last_settings_init_save_timer(
-    SubGhzLastSettings* instance,
-    FuriEventLoop* event_loop) {
+void subghz_last_settings_init_save_timer(SubGhzLastSettings* instance, FuriEventLoop* event_loop) {
     furi_assert(instance);
     furi_assert(event_loop);
     furi_assert(instance->save_timer == NULL);
     instance->save_timer = furi_event_loop_timer_alloc(
-        event_loop,
-        subghz_last_settings_save_timer_callback,
-        FuriEventLoopTimerTypeOnce,
-        instance);
+        event_loop, subghz_last_settings_save_timer_callback, FuriEventLoopTimerTypeOnce, instance);
 }
 
 void subghz_last_settings_mark_dirty(SubGhzLastSettings* instance) {

@@ -744,10 +744,8 @@ void subghz_scene_receiver_config_on_enter(void* context) {
          * are present.  In RAW mode many items are skipped, so these are
          * conditionally omitted — preset management doesn't apply to RAW
          * capture configuration anyway. */
-        variable_item_list_add(
-            subghz->variable_item_list, "Save Preset As...", 1, NULL, NULL);
-        variable_item_list_add(
-            subghz->variable_item_list, "Load Preset", 1, NULL, NULL);
+        variable_item_list_add(subghz->variable_item_list, "Save Preset As...", 1, NULL, NULL);
+        variable_item_list_add(subghz->variable_item_list, "Load Preset", 1, NULL, NULL);
     }
 
     if(scene_manager_get_scene_state(subghz->scene_manager, SubGhzSceneReadRAW) ==
@@ -768,9 +766,7 @@ void subghz_scene_receiver_config_on_enter(void* context) {
 
     /* Single enter-callback registration after all items are added. */
     variable_item_list_set_enter_callback(
-        subghz->variable_item_list,
-        subghz_scene_receiver_config_var_list_enter_callback,
-        subghz);
+        subghz->variable_item_list, subghz_scene_receiver_config_var_list_enter_callback, subghz);
 
     variable_item_list_set_selected_item(
         subghz->variable_item_list,
@@ -800,8 +796,9 @@ bool subghz_scene_receiver_config_on_event(void* context, SceneManagerEvent even
         } else if(event.event == SubGhzCustomEventSceneSettingResetToDefault) {
             scene_manager_previous_scene(subghz->scene_manager);
             consumed = true;
-        } else if(event.event == SubGhzCustomEventScenePresetSave ||
-                  event.event == SubGhzCustomEventScenePresetLoad) {
+        } else if(
+            event.event == SubGhzCustomEventScenePresetSave ||
+            event.event == SubGhzCustomEventScenePresetLoad) {
             scene_manager_next_scene(subghz->scene_manager, SubGhzScenePresetSave);
             consumed = true;
         }

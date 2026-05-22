@@ -716,9 +716,29 @@ uint32_t subghz_device_cc1101_ext_set_frequency(uint32_t value) {
         cc1101_set_frequency(subghz_device_cc1101_ext->spi_bus_handle, value);
     cc1101_calibrate(subghz_device_cc1101_ext->spi_bus_handle);
 
-    while(true) {
-        CC1101Status status = cc1101_get_status(subghz_device_cc1101_ext->spi_bus_handle);
-        if(status.STATE == CC1101StateIDLE) break;
+    /*
+     * QUALITY-03 fix: replace bare while(true) poll with a timeout-guarded
+     * wait via cc1101_wait_status_state() (same pattern used in idle/rx/tx).
+     *
+     * The original loop had no escape condition; a non-responding CC1101
+     * (SPI glitch, brown-out, or bus contention) would hang the application
+     * thread indefinitely.  10 ms is generous: calibration takes ~721 µs
+     * at 26 MHz XOSC (CC1101 datasheet Table 35).
+     *
+     * Also check CHIP_RDYn: if it is still asserted after the wait, the
+     * chip is unresponsive — log a warning so the symptom appears in the
+     * debug trace rather than silently producing wrong RF output.
+     */
+    if(!cc1101_wait_status_state(
+           subghz_device_cc1101_ext->spi_bus_handle, CC1101StateIDLE, 10000)) {
+        CC1101Status stuck = cc1101_get_status(subghz_device_cc1101_ext->spi_bus_handle);
+        FURI_LOG_W(
+            TAG,
+            "CC1101 did not reach IDLE after calibration "
+            "(state=%u CHIP_RDYn=%u) for freq %lu Hz",
+            (unsigned)stuck.STATE,
+            (unsigned)stuck.CHIP_RDYn,
+            (unsigned long)value);
     }
 
     furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);

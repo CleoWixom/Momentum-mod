@@ -65,9 +65,7 @@ bool subghz_last_settings_save(SubGhzLastSettings* instance);
  * @param instance  SubGhzLastSettings instance.
  * @param event_loop  FuriEventLoop to attach the timer to (must outlive instance).
  */
-void subghz_last_settings_init_save_timer(
-    SubGhzLastSettings* instance,
-    FuriEventLoop* event_loop);
+void subghz_last_settings_init_save_timer(SubGhzLastSettings* instance, FuriEventLoop* event_loop);
 
 /**
  * @brief Schedule a deferred file write.

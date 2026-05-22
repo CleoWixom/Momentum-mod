@@ -191,16 +191,62 @@ static bool subghz_protocol_raw_save_to_file_write(SubGhzProtocolDecoderRAW* ins
 void subghz_protocol_raw_save_to_file_stop(SubGhzProtocolDecoderRAW* instance) {
     furi_check(instance);
 
-    if(instance->file_is_open == RAWFileIsOpenWrite && instance->ind_write)
-        subghz_protocol_raw_save_to_file_write(instance);
-    if(instance->file_is_open != RAWFileIsOpenClose) {
-        free(instance->upload_raw);
+    /*
+     * BUG-04 fix: use-after-free race between feed() and stop().
+     *
+     * feed() runs on the SubGhzWorker thread (high priority).
+     * stop() is called from the application thread (lower priority).
+     *
+     * Previous sequence:
+     *   stop()                          feed()
+     *   ──────────────────────────────  ──────────────────────────────
+     *   save_to_file_write()            check upload_raw != NULL → true
+     *   free(upload_raw)                ← preempted here
+     *   upload_raw = NULL               write to freed buffer  ← CRASH
+     *
+     * Fix: NULL the pointer first, then flush from a local copy.
+     * On ARMv7-M (Cortex-M4) an aligned pointer store is atomic.
+     * The __DMB() data memory barrier ensures the SubGhzWorker thread
+     * observes upload_raw == NULL before we free the buffer.
+     *
+     *   stop()                          feed()
+     *   ──────────────────────────────  ──────────────────────────────
+     *   local_buf = upload_raw          check upload_raw == NULL → false
+     *   upload_raw = NULL  (atomic)     upload_raw == NULL seen → skip
+     *   __DMB()
+     *   flush local_buf → file          (no write to freed buffer)
+     *   free(local_buf)
+     */
+    if(instance->file_is_open == RAWFileIsOpenWrite) {
+        /* Step 1: snapshot the buffer pointer and current write count */
+        int32_t* local_buf = instance->upload_raw;
+        uint16_t local_count = instance->ind_write;
+
+        /* Step 2: atomically publish NULL so feed() stops writing */
         instance->upload_raw = NULL;
+        __DMB(); /* data memory barrier — visible to all cores/threads */
+
+        /* Step 3: flush the snapshot using the local pointer */
+        if(local_count > 0 && local_buf != NULL) {
+            if(!flipper_format_write_int32(
+                   instance->flipper_file, "RAW_Data", local_buf, local_count)) {
+                FURI_LOG_E(TAG, "Unable to add final RAW_Data in stop");
+            } else {
+                instance->sample_write += local_count;
+            }
+        }
+
+        /* Step 4: now it is safe to release the buffer */
+        free(local_buf);
+    }
+
+    if(instance->file_is_open != RAWFileIsOpenClose) {
         flipper_format_file_close(instance->flipper_file);
         flipper_format_free(instance->flipper_file);
         furi_record_close(RECORD_STORAGE);
     }
 
+    instance->ind_write = 0;
     instance->file_is_open = RAWFileIsOpenClose;
 }
 

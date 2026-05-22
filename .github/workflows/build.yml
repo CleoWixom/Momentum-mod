@@ -127,10 +127,28 @@ jobs:
             SIZE_BIN="size"   # fall back to host size (may not parse ARM ELF correctly)
           fi
 
-          ELF="build/f7-firmware/firmware.elf"
+          # Reconstruct the build-dir suffix produced by GetProjectDirName()
+          # in scripts/fbt_tools/fbt_dist.py:
+          #   suffix = ""
+          #   if DEBUG:   suffix += "D"
+          #   if COMPACT: suffix += "C"
+          # FBT_BUILD_TYPE is exported by the "Configure for Devbuild" step.
+          BUILD_SUFFIX=""
+          [[ "${FBT_BUILD_TYPE:-}" == *"DEBUG=1"*   ]] && BUILD_SUFFIX+="D"
+          [[ "${FBT_BUILD_TYPE:-}" == *"COMPACT=1"* ]] && BUILD_SUFFIX+="C"
+          BUILD_DIR_NAME="${TARGET}-firmware"
+          [[ -n "$BUILD_SUFFIX" ]] && BUILD_DIR_NAME="${BUILD_DIR_NAME}-${BUILD_SUFFIX}"
+          ELF="build/${BUILD_DIR_NAME}/firmware.elf"
+
           if [ ! -f "$ELF" ]; then
-            echo "::error::$ELF not found — was the build step skipped?"
-            exit 1
+            # Fallback: search the whole build tree (covers unexpected suffix combos)
+            ELF_FOUND=$(find build -maxdepth 2 -name "firmware.elf" 2>/dev/null | head -1)
+            if [ -z "$ELF_FOUND" ]; then
+              echo "::error::firmware.elf not found under build/ (expected: $ELF) — was the build step skipped?"
+              exit 1
+            fi
+            echo "::warning::Expected $ELF not found; using $ELF_FOUND instead"
+            ELF="$ELF_FOUND"
           fi
 
           # ── 2. ELF section sizes (.text / .data / .bss) ──────────────────

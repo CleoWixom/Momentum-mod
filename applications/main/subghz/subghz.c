@@ -209,8 +209,7 @@ SubGhz* subghz_alloc(bool alloc_for_tx_only) {
      * mark_dirty() calls.
      */
     subghz_last_settings_init_save_timer(
-        subghz->last_settings,
-        view_dispatcher_get_event_loop(subghz->view_dispatcher));
+        subghz->last_settings, view_dispatcher_get_event_loop(subghz->view_dispatcher));
     size_t preset_count = subghz_setting_get_preset_count(setting);
     subghz_last_settings_load(subghz->last_settings, preset_count);
     if(!alloc_for_tx_only) {
