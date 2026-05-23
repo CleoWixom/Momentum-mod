@@ -228,12 +228,8 @@ void subghz_protocol_raw_save_to_file_stop(SubGhzProtocolDecoderRAW* instance) {
 
         /* Step 3: flush the snapshot using the local pointer */
         if(local_count > 0 && local_buf != NULL) {
-            if(!flipper_format_write_int32(
-                   instance->flipper_file, "RAW_Data", local_buf, local_count)) {
-                FURI_LOG_E(TAG, "Unable to add final RAW_Data in stop");
-            } else {
-                instance->sample_write += local_count;
-            }
+            flipper_format_write_int32(instance->flipper_file, "RAW_Data", local_buf, local_count);
+            instance->sample_write += local_count;
         }
 
         /* Step 4: now it is safe to release the buffer */

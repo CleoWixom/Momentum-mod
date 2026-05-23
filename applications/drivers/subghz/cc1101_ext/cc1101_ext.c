@@ -499,45 +499,18 @@ void subghz_device_cc1101_ext_flush_tx(void) {
     furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
 }
 
-/** Running count of RX FIFO overflow events; useful for diagnostics. */
-static volatile uint32_t subghz_device_cc1101_ext_rx_overflow_count = 0;
-
 bool subghz_device_cc1101_ext_rx_pipe_not_empty(void) {
     CC1101RxBytes status[1];
     furi_hal_spi_acquire(subghz_device_cc1101_ext->spi_bus_handle);
-
-    /*
-     * CC1101 datasheet Rev. E, section 10.6 "RXFIFO and TXFIFO":
-     * The RXBYTES status register (0x3B, read with burst bit set) provides
-     * both the number of bytes available (bits 6:0) and the RXFIFO_OVERFLOW
-     * flag (bit 7).  Reading status registers with the burst bit is required
-     * to get the correct value on the first read.
-     *
-     * Historical note: RXFIFO_OVERFLOW was previously ignored (TODO comment).
-     * The root cause was that the flag is only reliable when read immediately
-     * after GDO0/GDO2 asserts the overflow condition; it can de-assert once
-     * the FIFO is partially drained.  The safest strategy is therefore to
-     * check it here, flush on detection, and let the caller handle
-     * resynchronisation.
-     */
     cc1101_read_reg(
         subghz_device_cc1101_ext->spi_bus_handle,
         (CC1101_STATUS_RXBYTES) | CC1101_BURST,
         (uint8_t*)status);
 
     if(status->RXFIFO_OVERFLOW) {
-        /*
-         * FIFO has overflowed: data is corrupted.  Per datasheet Table 25,
-         * SFRX must be issued in IDLE or RXFIFO_OVERFLOW states only.
-         * Switch to IDLE first, then flush.
-         */
         cc1101_switch_to_idle(subghz_device_cc1101_ext->spi_bus_handle);
         cc1101_flush_rx(subghz_device_cc1101_ext->spi_bus_handle);
-        subghz_device_cc1101_ext_rx_overflow_count++;
-        FURI_LOG_W(
-            TAG,
-            "RXFIFO overflow detected, flushed (total overflows: %lu)",
-            (unsigned long)subghz_device_cc1101_ext_rx_overflow_count);
+        FURI_LOG_W(TAG, "RXFIFO OVF");
         furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
         return false;
     }
@@ -734,10 +707,9 @@ uint32_t subghz_device_cc1101_ext_set_frequency(uint32_t value) {
         CC1101Status stuck = cc1101_get_status(subghz_device_cc1101_ext->spi_bus_handle);
         FURI_LOG_W(
             TAG,
-            "CC1101 did not reach IDLE after calibration "
-            "(state=%u CHIP_RDYn=%u) for freq %lu Hz",
-            (unsigned)stuck.STATE,
-            (unsigned)stuck.CHIP_RDYn,
+            "Calib stall s=%u rdy=%u f=%lu",
+            stuck.STATE,
+            stuck.CHIP_RDYn,
             (unsigned long)value);
     }
 

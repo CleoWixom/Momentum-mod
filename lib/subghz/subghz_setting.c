@@ -10,23 +10,11 @@
 #define FREQUENCY_MASK         (0xFFFFFFFF ^ FREQUENCY_FLAG_DEFAULT)
 
 /*
- * BUG-05: centralised frequency validator.
- * All code paths (UI, RPC, file loading, hopper) must call this function
- * instead of furi_hal_subghz_is_frequency_valid() directly, so that future
- * policy changes (extended-range unlock, regional exclusions) only require
- * edits in one place.
+ * BUG-05 (policy note): all callers in this file use
+ * furi_hal_subghz_is_frequency_valid() directly.  A centralised wrapper
+ * was introduced then removed for binary-size reasons; re-add it only when
+ * a policy layer (extended-range unlock, regional exclusion) is needed.
  */
-bool subghz_setting_frequency_valid(uint32_t frequency) {
-    if(frequency == 0) {
-        FURI_LOG_W(TAG, "Frequency 0 Hz is not valid");
-        return false;
-    }
-    bool valid = furi_hal_subghz_is_frequency_valid(frequency);
-    if(!valid) {
-        FURI_LOG_W(TAG, "Frequency %lu Hz is outside supported range", frequency);
-    }
-    return valid;
-}
 
 /* Default */
 static const uint32_t subghz_frequency_list[] = {
@@ -253,9 +241,8 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
             temp_bool = true;
             flipper_format_read_bool(fff_data_file, "Add_standard_frequencies", &temp_bool, 1);
             if(!temp_bool) {
-                FURI_LOG_I(TAG, "Skipping standard frequencies");
+                // standard frequencies skipped by user config
             } else {
-                FURI_LOG_I(TAG, "Adding standard frequencies");
                 subghz_setting_load_frequencies(instance->frequencies, subghz_frequency_list);
                 subghz_setting_load_frequencies(
                     instance->hopper_frequencies, subghz_hopper_frequency_list);
@@ -269,12 +256,10 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
             while(flipper_format_read_uint32(
                 fff_data_file, "Frequency", (uint32_t*)&temp_data32, 1)) {
                 //Todo FL-3535: add a frequency support check depending on the selected radio device
-                // BUG-05: use centralised validator so policy changes apply everywhere
-                if(subghz_setting_frequency_valid(temp_data32)) {
-                    FURI_LOG_I(TAG, "Frequency loaded %lu", temp_data32);
+                if(furi_hal_subghz_is_frequency_valid(temp_data32)) {
                     FrequencyList_push_back(instance->frequencies, temp_data32);
                 } else {
-                    FURI_LOG_E(TAG, "Frequency not supported %lu", temp_data32);
+                    FURI_LOG_E(TAG, "Freq not supported: %lu", temp_data32);
                 }
             }
 
@@ -285,12 +270,10 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
             }
             while(flipper_format_read_uint32(
                 fff_data_file, "Hopper_frequency", (uint32_t*)&temp_data32, 1)) {
-                // BUG-05: use centralised validator
-                if(subghz_setting_frequency_valid(temp_data32)) {
-                    FURI_LOG_I(TAG, "Hopper frequency loaded %lu", temp_data32);
+                if(furi_hal_subghz_is_frequency_valid(temp_data32)) {
                     FrequencyList_push_back(instance->hopper_frequencies, temp_data32);
                 } else {
-                    FURI_LOG_E(TAG, "Hopper frequency not supported %lu", temp_data32);
+                    FURI_LOG_E(TAG, "Hopper freq not supported: %lu", temp_data32);
                 }
             }
 
@@ -310,7 +293,6 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
             }
             furi_string_reset(temp_str);
             while(flipper_format_read_string(fff_data_file, "Custom_preset_name", temp_str)) {
-                FURI_LOG_I(TAG, "Custom preset loaded %s", furi_string_get_cstr(temp_str));
                 subghz_setting_load_custom_preset(
                     instance, furi_string_get_cstr(temp_str), fff_data_file);
             }
@@ -323,11 +305,11 @@ void subghz_setting_load(SubGhzSetting* instance, const char* file_path) {
     furi_record_close(RECORD_STORAGE);
 
     if(!FrequencyList_size(instance->frequencies)) {
-        FURI_LOG_E(TAG, "Empty static frequency list, loading default ones");
+        FURI_LOG_E(TAG, "Empty freq list, using defaults");
         subghz_setting_load_frequencies(instance->frequencies, subghz_frequency_list);
     }
     if(!FrequencyList_size(instance->hopper_frequencies)) {
-        FURI_LOG_E(TAG, "Empty hopper frequency list, loading default ones");
+        FURI_LOG_E(TAG, "Empty hopper list, using defaults");
         subghz_setting_load_frequencies(
             instance->hopper_frequencies, subghz_hopper_frequency_list);
     }
@@ -455,12 +437,7 @@ bool subghz_setting_save_custom_preset(
 
     bool result = false;
     do {
-        /*
-         * Try append first (file already exists and has a valid header).
-         * If the file is absent or corrupt, fall back to creating a fresh one.
-         */
         if(!flipper_format_file_open_append(fff, path)) {
-            FURI_LOG_I(TAG, "setting_user not found, creating it");
             flipper_format_free(fff);
             fff = flipper_format_file_alloc(storage);
             if(!flipper_format_file_open_new(fff, path)) {
@@ -487,16 +464,11 @@ bool subghz_setting_save_custom_preset(
     furi_record_close(RECORD_STORAGE);
 
     if(result) {
-        /*
-         * Reflect the new preset in the in-memory list immediately so that
-         * the Modulation selector shows it without requiring a restart.
-         */
         FlipperFormat* fff_mem = flipper_format_string_alloc();
         flipper_format_write_hex(fff_mem, "Custom_preset_data", preset_data, preset_data_size);
         flipper_format_rewind(fff_mem);
         result = subghz_setting_load_custom_preset(instance, preset_name, fff_mem);
         flipper_format_free(fff_mem);
-        FURI_LOG_I(TAG, "Preset '%s' saved (%zu bytes)", preset_name, preset_data_size);
     }
     return result;
 }
@@ -559,32 +531,13 @@ uint32_t subghz_setting_get_default_frequency(SubGhzSetting* instance) {
 
 uint8_t subghz_setting_customs_presets_to_log(SubGhzSetting* instance) {
     furi_assert(instance);
-#ifndef FURI_DEBUG
-    FURI_LOG_I(TAG, "Logging loaded presets allow only Debug build");
-#else
+#ifdef FURI_DEBUG
     uint8_t count = 0;
-    FuriString* temp = furi_string_alloc();
-
-    FURI_LOG_I(TAG, "Loaded presets");
-    for
-        M_EACH(item, instance->preset->data, SubGhzSettingCustomPresetItemArray_t) {
-            furi_string_reset(temp);
-
-            for(uint8_t i = 0; i < item->custom_preset_data_size; i++) {
-                furi_string_cat_printf(temp, "%02u ", item->custom_preset_data[i]);
-            }
-
-            FURI_LOG_I(
-                TAG, "%u  -  %s", count + 1, furi_string_get_cstr(item->custom_preset_name));
-            FURI_LOG_I(TAG, "  Size: %u", item->custom_preset_data_size);
-            FURI_LOG_I(TAG, "  Data: %s", furi_string_get_cstr(temp));
-
-            count++;
-        }
-
-    furi_string_free(temp);
-
+    M_EACH(item, instance->preset->data, SubGhzSettingCustomPresetItemArray_t) {
+        FURI_LOG_I(TAG, "Preset %u: %s", ++count, furi_string_get_cstr(item->custom_preset_name));
+    }
     return count;
+#else
+    return (uint8_t)SubGhzSettingCustomPresetItemArray_size(instance->preset->data);
 #endif
-    return 0;
 }

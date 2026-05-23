@@ -266,47 +266,15 @@ static void subghz_view_receiver_draw_frame(Canvas* canvas, uint16_t idx, bool s
 }
 
 /*
- * UI-02: RSSI indicator in receiver view.
- *
- * Layout (Live mode, bottom strip y=49..53):
- *   [ -dBm ] [████████░░░░░░░░░░]   ← label + 16-segment bar
- *
- * u_rssi  = rssi_float - SUBGHZ_RAW_THRESHOLD_MIN  (−90 dBm baseline)
- * Maximum meaningful range ≈ 0..90 → mapped to 0..16 bar segments.
- *
- * Each segment is 4px wide × 3px tall with 1px gap, starting at x=45.
- * Total bar width = 16 × 5 − 1 = 79 px, ending at x=123 (fits 128-wide screen).
+ * UI-02: compact RSSI fill bar (y=49..51, x=46..124 = 79 px wide).
+ * outline + filled portion — 2 draw calls, ~same .text size as original dots
+ * but gives a solid progress bar. Range: u_rssi 0..90 → fill 0..79 px.
  */
-#define RSSI_BAR_SEGMENTS 16u
-#define RSSI_BAR_SEG_W    4u
-#define RSSI_BAR_SEG_GAP  1u
-#define RSSI_BAR_X0       45u
-#define RSSI_BAR_Y0       49u
-#define RSSI_BAR_H        3u
-
 static void subghz_view_rssi_draw(Canvas* canvas, SubGhzViewReceiverModel* model) {
-    /* Map u_rssi (0..~90) to 0..RSSI_BAR_SEGMENTS filled segments */
-    uint8_t filled = (model->u_rssi * RSSI_BAR_SEGMENTS + 89u) / 90u;
-    if(filled > RSSI_BAR_SEGMENTS) filled = RSSI_BAR_SEGMENTS;
-
-    for(uint8_t s = 0; s < RSSI_BAR_SEGMENTS; s++) {
-        uint8_t x = RSSI_BAR_X0 + s * (RSSI_BAR_SEG_W + RSSI_BAR_SEG_GAP);
-        if(s < filled) {
-            /* Filled segment — solid block */
-            canvas_draw_box(canvas, x, RSSI_BAR_Y0, RSSI_BAR_SEG_W, RSSI_BAR_H);
-        } else {
-            /* Empty segment — outline only */
-            canvas_draw_frame(canvas, x, RSSI_BAR_Y0, RSSI_BAR_SEG_W, RSSI_BAR_H);
-        }
-    }
-
-    /* Numeric dBm label to the left of the bar (FontSecondary = 7px tall) */
-    char rssi_str[8];
-    int rssi_dbm = (int)SUBGHZ_RAW_THRESHOLD_MIN + (int)model->u_rssi;
-    snprintf(rssi_str, sizeof(rssi_str), "%d", rssi_dbm);
-    canvas_set_font(canvas, FontSecondary);
-    canvas_draw_str_aligned(
-        canvas, RSSI_BAR_X0 - 2, RSSI_BAR_Y0 + RSSI_BAR_H, AlignRight, AlignBottom, rssi_str);
+    uint8_t w = (uint8_t)((uint16_t)model->u_rssi * 79u / 90u);
+    if(w > 79) w = 79;
+    canvas_draw_frame(canvas, 46, 49, 79, 3);
+    if(w > 0) canvas_draw_box(canvas, 46, 49, w, 3);
 }
 
 void subghz_view_receiver_draw(Canvas* canvas, SubGhzViewReceiverModel* model) {
