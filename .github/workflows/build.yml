@@ -150,6 +150,7 @@ jobs:
             echo "::warning::Expected $ELF not found; using $ELF_FOUND instead"
             ELF="$ELF_FOUND"
           fi
+          echo "ELF: $ELF"
 
           # ── 2. ELF section sizes (.text / .data / .bss) ──────────────────
           echo "=== ELF section sizes ==="
