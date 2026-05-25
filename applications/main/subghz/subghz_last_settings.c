@@ -77,7 +77,6 @@ void subghz_last_settings_mark_dirty(SubGhzLastSettings* instance) {
          * code path that does not use the async API).  Fall back to immediate
          * synchronous write so no data is lost.
          */
-        FURI_LOG_W(TAG, "mark_dirty: timer not ready, saving synchronously");
         subghz_last_settings_save(instance);
         instance->dirty = false;
     }
