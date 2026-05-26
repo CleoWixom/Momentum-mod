@@ -115,7 +115,7 @@ static void subghz_scene_radio_settings_set_tx_power(VariableItem* item) {
     subghz->last_settings->tx_power = subghz->tx_power = index;
 
     //Save the settings now, this is the convention here!
-    subghz_last_settings_mark_dirty(subghz->last_settings);
+    subghz_last_settings_save(subghz->last_settings);
 }
 
 static void subghz_scene_receiver_config_set_debug_pin(VariableItem* item) {
@@ -160,7 +160,7 @@ static void subghz_scene_receiver_config_set_gps(VariableItem* item) {
         subghz->last_settings->gps_baudrate = 115200;
         break;
     }
-    subghz_last_settings_mark_dirty(subghz->last_settings);
+    subghz_last_settings_save(subghz->last_settings);
 
     if(subghz->gps) {
         subghz_gps_plugin_deinit(subghz->gps);
@@ -178,7 +178,7 @@ static void subghz_scene_receiver_config_set_protocol_file_names(VariableItem* i
     variable_item_set_current_value_text(item, on_off_text[index]);
 
     subghz->last_settings->protocol_file_names = (index == 1);
-    subghz_last_settings_mark_dirty(subghz->last_settings);
+    subghz_last_settings_save(subghz->last_settings);
 }
 
 void subghz_scene_radio_settings_on_enter(void* context) {

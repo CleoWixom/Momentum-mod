@@ -218,7 +218,6 @@ static bool subghz_device_cc1101_ext_check_init(void) {
     furi_hal_spi_release(subghz_device_cc1101_ext->spi_bus_handle);
 
     if(ret) {
-        FURI_LOG_I(TAG, "Init OK");
     } else {
         FURI_LOG_E(TAG, "Init failed");
         furi_hal_gpio_init(
@@ -358,7 +357,6 @@ static bool subghz_device_cc1101_ext_probe(void) {
         furi_hal_gpio_init_simple(&gpio_ext_pa4, GpioModeAnalog);
     }
 
-    FURI_LOG_D(TAG, "CC1101 probe: VERSION=0x%02X -> %s", version, version ? "present" : "absent");
     return version != 0;
 }
 
@@ -445,13 +443,10 @@ void subghz_device_cc1101_ext_load_custom_preset(const uint8_t* preset_data) {
     //show debug
     if(furi_hal_rtc_is_flag_set(FuriHalRtcFlagDebug)) {
         i = 0;
-        FURI_LOG_D(TAG, "Loading custom preset");
         while(preset_data[i] && (i < SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES - 2u)) {
-            FURI_LOG_D(TAG, "Reg[%lu]: %02X=%02X", i, preset_data[i], preset_data[i + 1]);
             i += 2;
         }
         for(uint8_t y = i; y < i + 10; y++) {
-            FURI_LOG_D(TAG, "PA[%u]:  %02X", y, preset_data[y]);
         }
     }
 #undef SUBGHZ_CC1101_PRESET_MAX_CONFIG_BYTES
@@ -644,7 +639,6 @@ bool subghz_device_cc1101_ext_is_frequency_valid(uint32_t value) {
 SubGhzTx subghz_device_cc1101_ext_check_tx(uint32_t value) {
     // Check against extended range of YARD Stick One, no configuration would allow this frequency
     if(!subghz_device_cc1101_ext_is_frequency_valid(value)) {
-        FURI_LOG_I(TAG, "Frequency blocked - outside supported range");
         return SubGhzTxUnsupported;
     }
 
@@ -653,18 +647,15 @@ SubGhzTx subghz_device_cc1101_ext_check_tx(uint32_t value) {
        !(value >= 299999755 && value <= 350000335) && // was increased from 348 to 350
        !(value >= 386999938 && value <= 467750000) && // was increased from 464 to 467.75
        !(value >= 778999847 && value <= 928000000)) {
-        FURI_LOG_I(TAG, "Frequency blocked - outside default range");
         return SubGhzTxBlockedDefault;
     }
 
     // Check against region restrictions, tighter than extended and default
     if(!subghz_device_cc1101_ext->bypass_region) {
         if(!furi_hal_region_is_provisioned()) {
-            FURI_LOG_I(TAG, "Frequency blocked - region not provisioned");
             return SubGhzTxBlockedRegionNotProvisioned;
         }
         if(!furi_hal_region_is_frequency_allowed(value)) {
-            FURI_LOG_I(TAG, "Frequency blocked - outside region range");
             return SubGhzTxBlockedRegion;
         }
     }

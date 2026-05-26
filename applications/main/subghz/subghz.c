@@ -203,13 +203,6 @@ SubGhz* subghz_alloc(bool alloc_for_tx_only) {
 
     // Load last used values for Read, Read RAW, etc. or default
     subghz->last_settings = subghz_last_settings_alloc();
-    /*
-     * SETTINGS-01: attach the async-save timer to the ViewDispatcher's event
-     * loop.  Must be called after view_dispatcher_alloc() and before any
-     * mark_dirty() calls.
-     */
-    subghz_last_settings_init_save_timer(
-        subghz->last_settings, view_dispatcher_get_event_loop(subghz->view_dispatcher));
     size_t preset_count = subghz_setting_get_preset_count(setting);
     subghz_last_settings_load(subghz->last_settings, preset_count);
     if(!alloc_for_tx_only) {
@@ -380,8 +373,6 @@ void subghz_free(SubGhz* subghz, bool alloc_for_tx_only) {
         subghz_gps_plugin_deinit(subghz->gps);
     }
 
-    /* SETTINGS-01: ensure pending async write is flushed before teardown. */
-    subghz_last_settings_flush_save(subghz->last_settings);
     subghz_last_settings_free(subghz->last_settings);
 
     // The rest

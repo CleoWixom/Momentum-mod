@@ -315,12 +315,6 @@ bool subghz_history_add_to_history(
                      */
                     if(preset->rssi != 0.0f && search->rssi != 0.0f &&
                        fabsf(preset->rssi - search->rssi) > 15.0f) {
-                        FURI_LOG_D(
-                            TAG,
-                            "Dedup skip: RSSI delta %.1f dBm (%.1f vs %.1f) — different device",
-                            (double)fabsf(preset->rssi - search->rssi),
-                            (double)preset->rssi,
-                            (double)search->rssi);
                         break; /* fall through to append as new entry */
                     }
                     search->repeats++;
@@ -329,11 +323,6 @@ bool subghz_history_add_to_history(
                     if(preset->rssi != 0.0f) search->rssi = preset->rssi;
                     instance->code_last_hash_data = hash_data;
                     instance->last_update_timestamp = now;
-                    FURI_LOG_D(
-                        TAG,
-                        "Dedup: updated repeat %u for hash %08lX",
-                        (unsigned)search->repeats,
-                        hash_data);
                     return false; /* existing row updated — not a new entry */
                 }
                 break; /* outside window — fall through to append */
@@ -426,7 +415,6 @@ bool subghz_history_add_to_history(
         }
         uint8_t key_data[sizeof(uint64_t)] = {0};
         if(!flipper_format_read_hex(item->flipper_string, "Key", key_data, sizeof(uint64_t))) {
-            FURI_LOG_D(TAG, "No Key");
         }
         uint64_t data = 0;
         for(uint8_t i = 0; i < sizeof(uint64_t); i++) {

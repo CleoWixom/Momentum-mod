@@ -3,9 +3,6 @@
 
 #define TAG "SubGhzLastSettings"
 
-/** Delay between the last mark_dirty() call and the actual file write (ms). */
-#define SUBGHZ_LAST_SETTINGS_SAVE_DELAY_MS 1500u
-
 #define SUBGHZ_LAST_SETTING_FILE_TYPE    "Flipper SubGhz Last Setting File"
 #define SUBGHZ_LAST_SETTING_FILE_VERSION 3
 #define SUBGHZ_LAST_SETTINGS_PATH        EXT_PATH("subghz/assets/last_subghz.settings")
@@ -31,76 +28,11 @@
 
 SubGhzLastSettings* subghz_last_settings_alloc(void) {
     SubGhzLastSettings* instance = malloc(sizeof(SubGhzLastSettings));
-    instance->save_timer = NULL;
-    instance->dirty = false;
     return instance;
-}
-
-/*
- * SETTINGS-01: one-shot save timer callback.
- * Runs on the ViewDispatcher event loop thread — same thread as all scene
- * callbacks — so calling subghz_last_settings_save() here is safe and
- * requires no extra locking.
- */
-static void subghz_last_settings_save_timer_callback(void* context) {
-    SubGhzLastSettings* instance = context;
-    furi_assert(instance);
-    if(instance->dirty) {
-        FURI_LOG_D(TAG, "Async save triggered");
-        subghz_last_settings_save(instance);
-        instance->dirty = false;
-    }
-}
-
-void subghz_last_settings_init_save_timer(SubGhzLastSettings* instance, FuriEventLoop* event_loop) {
-    furi_assert(instance);
-    furi_assert(event_loop);
-    furi_assert(instance->save_timer == NULL);
-    instance->save_timer = furi_event_loop_timer_alloc(
-        event_loop, subghz_last_settings_save_timer_callback, FuriEventLoopTimerTypeOnce, instance);
-}
-
-void subghz_last_settings_mark_dirty(SubGhzLastSettings* instance) {
-    furi_assert(instance);
-    instance->dirty = true;
-    if(instance->save_timer) {
-        /*
-         * (Re)start the one-shot timer.  Calling this while the timer is
-         * already running resets the countdown, coalescing rapid successive
-         * changes into a single write.
-         */
-        furi_event_loop_timer_start(
-            instance->save_timer, furi_ms_to_ticks(SUBGHZ_LAST_SETTINGS_SAVE_DELAY_MS));
-    } else {
-        /*
-         * Timer not yet initialised (called before init_save_timer, or in a
-         * code path that does not use the async API).  Fall back to immediate
-         * synchronous write so no data is lost.
-         */
-        subghz_last_settings_save(instance);
-        instance->dirty = false;
-    }
-}
-
-void subghz_last_settings_flush_save(SubGhzLastSettings* instance) {
-    furi_assert(instance);
-    if(instance->save_timer) {
-        furi_event_loop_timer_stop(instance->save_timer);
-    }
-    if(instance->dirty) {
-        FURI_LOG_D(TAG, "Flush save on exit");
-        subghz_last_settings_save(instance);
-        instance->dirty = false;
-    }
 }
 
 void subghz_last_settings_free(SubGhzLastSettings* instance) {
     furi_assert(instance);
-    subghz_last_settings_flush_save(instance);
-    if(instance->save_timer) {
-        furi_event_loop_timer_free(instance->save_timer);
-        instance->save_timer = NULL;
-    }
     free(instance);
 }
 
